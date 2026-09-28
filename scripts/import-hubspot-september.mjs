@@ -343,9 +343,9 @@ async function insertTicket(client, ticket) {
 }
 
 async function main() {
-  const connectionString = strip(process.env.NEON_DIRECT_URL || process.env.NEON_DATABASE_URL || '')
+  const connectionString = strip(process.env.NEON_DATABASE_URL || process.env.NEON_DIRECT_URL || '')
   if (!connectionString) {
-    console.error('Brak NEON_DIRECT_URL / NEON_DATABASE_URL.')
+    console.error('Brak NEON_DATABASE_URL / NEON_DIRECT_URL.')
     process.exit(1)
   }
 
@@ -375,9 +375,16 @@ async function main() {
 
   const client = new pg.Client({
     connectionString,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    connectionTimeoutMillis: 60_000,
     ssl: /neon\.tech/i.test(connectionString) ? { rejectUnauthorized: false } : undefined
   })
+  client.on('error', (err) => {
+    console.error('pg client error:', err.message)
+  })
   await client.connect()
+  await client.query('select 1')
 
   const stats = {
     ticketsInserted: 0,
