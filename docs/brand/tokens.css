@@ -1,0 +1,26 @@
+/* sun.support design tokens (v3). Source: sun.store brandbook. */
+@font-face { font-family: 'Aeonik'; src: url('fonts/Aeonik-Regular.otf') format('opentype'); font-weight: 400; }
+@font-face { font-family: 'Aeonik'; src: url('fonts/Aeonik-Medium.otf') format('opentype'); font-weight: 500; }
+@font-face { font-family: 'Aeonik'; src: url('fonts/Aeonik-Bold.otf') format('opentype'); font-weight: 700; }
+
+:root {
+  --color-green: #2EBB6F;   /* primary accent, CTAs, positive */
+  --color-yellow: #F6D736;  /* logomark + decoration only */
+  --color-black: #000000;   /* text, dark surfaces */
+  --color-white: #FFFFFF;   /* default background */
+  --color-gray: #F8F8F8;    /* panels, chips */
+  --color-body: #727487;    /* small labels, captions */
+
+  --font-family: 'Aeonik', 'Inter', 'DM Sans', sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+
+  --text-h1: 48px;
+  --text-h2: 40px;
+  --text-h3: 32px;
+  --text-h4: 24px;
+  --text-body1: 18px;
+  --text-body2: 16px;
+
+  --radius-button: 8px;
+}
