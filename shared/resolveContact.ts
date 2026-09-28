@@ -47,8 +47,8 @@ export function detectContactConflict(contactIds: string[]): {
 } {
   const unique = [...new Set(contactIds.filter(Boolean))]
   if (unique.length === 0) return { contactId: null, conflictIds: [] }
-  if (unique.length === 1) return { contactId: unique[0], conflictIds: [] }
-  return { contactId: unique[0], conflictIds: unique }
+  if (unique.length === 1) return { contactId: unique[0] ?? null, conflictIds: [] }
+  return { contactId: unique[0] ?? null, conflictIds: unique }
 }
 
 function rank(type: IdentifierType): number {

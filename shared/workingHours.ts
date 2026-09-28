@@ -55,16 +55,16 @@ export function zonedParts(date: Date, timeZone = DEFAULT_TIME_ZONE): ZonedParts
     second: '2-digit'
   })
   const map = Object.fromEntries(fmt.formatToParts(date).map(part => [part.type, part.value]))
-  let hour = Number(map.hour)
+  let hour = Number(map.hour ?? 0)
   if (hour === 24) hour = 0
   return {
-    year: Number(map.year),
-    month: Number(map.month),
-    day: Number(map.day),
+    year: Number(map.year ?? 0),
+    month: Number(map.month ?? 0),
+    day: Number(map.day ?? 0),
     hour,
-    minute: Number(map.minute),
-    second: Number(map.second),
-    weekday: WEEKDAY_INDEX[map.weekday] ?? 0
+    minute: Number(map.minute ?? 0),
+    second: Number(map.second ?? 0),
+    weekday: WEEKDAY_INDEX[map.weekday ?? ''] ?? 0
   }
 }
 
@@ -188,7 +188,10 @@ export function businessSecondsBetween(
   let cursor = dateKey(start, calendar.timeZone)
   const last = dateKey(end, calendar.timeZone)
   while (cursor <= last) {
-    const [year, month, day] = cursor.split('-').map(Number)
+    const [yearPart, monthPart, dayPart] = cursor.split('-')
+    const year = Number(yearPart ?? 0)
+    const month = Number(monthPart ?? 0)
+    const day = Number(dayPart ?? 0)
     const dayInstant = fromZonedTime(year, month, day, 12, 0, 0, calendar.timeZone)
     if (isWorkingDay(dayInstant, calendar)) {
       const dayStart = fromZonedTime(year, month, day, calendar.startHour, 0, 0, calendar.timeZone)
@@ -215,7 +218,10 @@ function addUtcDays(date: Date, days: number): Date {
 }
 
 function nextDateKey(key: string): string {
-  const [year, month, day] = key.split('-').map(Number)
+  const [yearPart, monthPart, dayPart] = key.split('-')
+  const year = Number(yearPart ?? 0)
+  const month = Number(monthPart ?? 0)
+  const day = Number(dayPart ?? 0)
   const next = new Date(Date.UTC(year, month - 1, day + 1))
   return utcDateKey(next)
 }

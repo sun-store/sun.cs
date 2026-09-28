@@ -39,7 +39,7 @@ function loadEnvFile(name) {
       let value = trimmed.slice(eq + 1).trim()
       if (
         (value.startsWith('"') && value.endsWith('"'))
-        || (value.startsWith("'") && value.endsWith("'"))
+        || (value.startsWith('\'') && value.endsWith('\''))
       ) {
         value = value.slice(1, -1)
       }
@@ -98,13 +98,13 @@ function mapCategory(raw) {
   const table = {
     'dbss issue': 'delivery',
     'logistics issue': 'delivery',
-    claim: 'delivery',
+    'claim': 'delivery',
     'sun.finance': 'payment',
     'no vat': 'payment',
     'lost on platform': 'account',
     'offer request': 'product',
-    spam: 'other',
-    other: 'other',
+    'spam': 'other',
+    'other': 'other',
     'unresponsive seller': 'other'
   }
   for (const part of parts) {

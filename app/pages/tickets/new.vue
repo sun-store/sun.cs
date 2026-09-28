@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  CALL_STATUSES,
+  type CALL_STATUSES,
   CHANNEL_LABELS,
   CHANNELS
 } from '~~/shared/domain'
@@ -61,9 +61,9 @@ const callItems = [
 
 function firstContactIso(value: string) {
   const [datePart, timePart] = value.split('T')
-  const [year, month, day] = datePart.split('-').map(Number)
-  const [hour, minute] = timePart.split(':').map(Number)
-  return fromZonedTime(year, month, day, hour, minute, 0).toISOString()
+  const [year, month, day] = (datePart ?? '').split('-').map(Number)
+  const [hour, minute] = (timePart ?? '').split(':').map(Number)
+  return fromZonedTime(year ?? 0, month ?? 0, day ?? 0, hour ?? 0, minute ?? 0, 0).toISOString()
 }
 
 async function submit() {
@@ -74,7 +74,7 @@ async function submit() {
   }
   isSubmitting.value = true
   try {
-    const ticket = await $fetch('/api/tickets', {
+    const ticket = await $fetch<{ id: string }>('/api/tickets', {
       method: 'POST',
       body: {
         ...form,
@@ -94,7 +94,6 @@ async function submit() {
     isSubmitting.value = false
   }
 }
-
 </script>
 
 <template>

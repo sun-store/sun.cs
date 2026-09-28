@@ -51,9 +51,9 @@ function applyPreset(preset: typeof presets[number]) {
 
 function parseWarsaw(value: string): Date {
   const [datePart, timePart] = value.split('T')
-  const [year, month, day] = datePart.split('-').map(Number)
-  const [hour, minute] = timePart.split(':').map(Number)
-  return fromZonedTime(year, month, day, hour, minute, 0)
+  const [year, month, day] = (datePart ?? '').split('-').map(Number)
+  const [hour, minute] = (timePart ?? '').split(':').map(Number)
+  return fromZonedTime(year ?? 0, month ?? 0, day ?? 0, hour ?? 0, minute ?? 0, 0)
 }
 
 function formatMinutes(ms: number | null): string {

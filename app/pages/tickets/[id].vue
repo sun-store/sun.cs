@@ -1,16 +1,56 @@
 <script setup lang="ts">
 import {
+  type MESSAGE_DIRECTIONS,
   CATEGORIES,
   CATEGORY_LABELS,
   CHANNEL_LABELS,
-  MESSAGE_DIRECTIONS,
   PRIORITY_LABELS,
   TICKET_PRIORITIES,
   type Channel
 } from '~~/shared/domain'
 
 const route = useRoute()
-const { data, refresh, error } = await useFetch(() => `/api/tickets/${route.params.id}`)
+
+type TicketDetail = {
+  channel: Channel
+  conflict?: boolean
+  conflictIds?: string[]
+  contact?: {
+    id: string
+    display_name?: string | null
+    customer_role?: string | null
+    sunstore_user_id?: string | null
+    hubspot_contact_id?: string | null
+    conflictIds?: string[]
+    identifiers?: Array<{ type: string, value: string }>
+  } | null
+  contactName?: string | null
+  subject?: string | null
+  events?: Array<{
+    id: string
+    senderType: string
+    direction: string
+    channel: string
+    body?: string | null
+    createdAt: string
+  }>
+  status?: string
+  hubspotTicketId?: string | null
+  orders?: Array<{
+    transactionId: string
+    logisticsUrl?: string | null
+    status?: string | null
+  }>
+  category?: string | null
+  priority?: string | null
+  sla?: {
+    eligible: boolean
+    met: boolean | null
+    exclusion: string | null
+  }
+}
+
+const { data, refresh, error } = await useFetch<TicketDetail>(() => `/api/tickets/${route.params.id}`)
 
 const reply = reactive({
   body: '',

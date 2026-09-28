@@ -7,7 +7,7 @@ const ROLE_LABELS: Record<AppRole, string> = {
   agent: 'Agent (jeszcze nie loguje się)'
 }
 
-const { data, refresh, error } = await useFetch('/api/team')
+const { data, refresh, error } = await useFetch<{ members: Array<{ email: string, role: string }> }>('/api/team')
 const form = reactive({
   email: '',
   role: 'lead' as AppRole

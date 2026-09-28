@@ -10,7 +10,24 @@ import {
 const status = ref<TicketStatus | 'all'>('all')
 const channel = ref<Channel | 'all'>('all')
 
-const { data, refresh, pending, error } = await useFetch('/api/tickets', {
+type TicketsListResponse = {
+  tickets: Array<{
+    id: string
+    subject: string | null
+    status: string
+    channel: string
+    sla: { eligible: boolean, met: boolean | null, exclusion: string | null }
+    [key: string]: unknown
+  }>
+  summary: {
+    open: number
+    slaEligible: number
+    slaMet: number
+  }
+  truncated?: boolean
+}
+
+const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => ({
     status: status.value,
     channel: channel.value

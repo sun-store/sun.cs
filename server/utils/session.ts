@@ -1,4 +1,3 @@
-import type { H3Event } from 'h3'
 import { createError, getRequestHeaders } from 'h3'
 import type { AppRole } from '../../shared/domain'
 import { getBetterAuth } from '../services/auth'
@@ -13,7 +12,11 @@ export type SessionUser = {
   agentId: string | null
 }
 
-export async function requireUser(event: H3Event): Promise<SessionUser> {
+export async function requireUser(
+  // Nested h3 copies disagree on H3Event; accept the runtime event object.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any
+): Promise<SessionUser> {
   if (!hasNeonConfig()) {
     throw createError({
       statusCode: 503,
@@ -46,7 +49,10 @@ export async function requireUser(event: H3Event): Promise<SessionUser> {
   }
 }
 
-export async function requireAdmin(event: H3Event): Promise<SessionUser> {
+export async function requireAdmin(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any
+): Promise<SessionUser> {
   const user = await requireUser(event)
   if (user.role !== 'admin') {
     throw createError({ statusCode: 403, statusMessage: 'Tylko admin zarządza listą zespołu.' })

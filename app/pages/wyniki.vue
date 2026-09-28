@@ -7,7 +7,74 @@ const MONTH_LABELS = [
 const year = ref(2026)
 const month = ref(9)
 
-const { data, pending, error, refresh } = await useFetch('/api/kpi', {
+type KpiResponse = {
+  coverage?: {
+    ticketsThrough?: string
+    chatsThrough?: string
+    csatThrough?: string
+    monthInProgress?: boolean
+  }
+  targets: {
+    fcr: number
+    sla: number
+    csat: number
+    retention: number
+    qa: number
+  }
+  team: {
+    fcrR: number | null
+    slaR: number | null
+    csatR: number | null
+    retR: number | null
+    qaR: number | null
+    fcrN?: number
+    fcrDen?: number
+    slaMet?: number
+    slaTotal?: number
+    slaExcludedOffHours?: number
+    csatHappy?: number
+    csatTotal?: number
+    retN?: number
+    retD?: number
+    retOpen?: number
+    qaPass?: number
+    qaTotal?: number
+    bonus?: number | null
+  }
+  ai?: {
+    rate?: number | null
+    resolved?: number
+    denominator?: number
+    rawContainment?: number | null
+  }
+  counts: {
+    closed: number
+    period: number
+    csatEmailPhone: number
+    csatChatExcluded: number
+  }
+  withoutArmand: {
+    fcrR: number | null
+    slaR: number | null
+    csatR: number | null
+    retR: number | null
+    qaR: number | null
+    bonus?: number | null
+  }
+  agents: Array<{
+    agent: string
+    closed: number
+    all: number
+    fcrR: number | null
+    slaR: number | null
+    csatR: number | null
+    retR: number | null
+    qaR: number | null
+    bonus: number | null
+  }>
+}
+
+const { data, pending, error, refresh } = await useFetch<KpiResponse>('/api/kpi', {
   query: computed(() => ({ year: year.value, month: month.value }))
 })
 
