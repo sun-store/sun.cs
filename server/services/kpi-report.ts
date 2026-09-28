@@ -166,9 +166,21 @@ function loadCsat(): { rows: CsatRow[], through: string } {
 function latestFileStamp(dir: string, pattern: RegExp, fallback: string): string {
   if (!existsSync(dir)) return fallback
   const names = readdirSync(dir).filter(name => pattern.test(name)).sort()
-  const last = names.at(-1)
-  const match = last?.match(/(\d{4}-\d{2}-\d{2}|[a-z]{3}\d{2})/i)
-  return match?.[1] || fallback
+  let best = fallback
+  for (const name of names) {
+    const iso = name.match(/(\d{4}-\d{2}-\d{2})/)
+    if (iso?.[1] && iso[1] > best) best = iso[1]
+    const short = name.match(/_(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\d{2})/i)
+    if (short) {
+      const months: Record<string, string> = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+      }
+      const stamp = `2026-${months[short[1].toLowerCase()]}-${short[2]}`
+      if (stamp > best) best = stamp
+    }
+  }
+  return best
 }
 
 export async function loadKpiReport(year = 2026, month = 9) {

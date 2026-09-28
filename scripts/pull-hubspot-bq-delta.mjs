@@ -87,10 +87,16 @@ async function queryAll(bq, sql) {
 
 async function main() {
   loadEnvFile(LOGISTICS_ENV)
+  loadEnvFile(resolve(ROOT, '.env'))
   const { since } = parseArgs(process.argv.slice(2))
+  const jsonPath = process.env.BQ_SERVICE_ACCOUNT_FILE || ''
   const creds = parseServiceAccount(process.env.BQ_SERVICE_ACCOUNT_JSON)
+    || (jsonPath && existsSync(jsonPath) ? JSON.parse(readFileSync(jsonPath, 'utf8')) : null)
   if (!creds) {
-    throw new Error('Brak BQ_SERVICE_ACCOUNT_JSON w sun.logistics/.env')
+    throw new Error(
+      'Brak BigQuery: ustaw BQ_SERVICE_ACCOUNT_JSON (lub BQ_SERVICE_ACCOUNT_FILE) w .env. '
+      + 'Lokalnie logistics ma pusty BQ_SERVICE_ACCOUNT_JSON — skopiuj z Vercel logistics Environment Variables.'
+    )
   }
   if (!existsSync(LOGISTICS_BQ)) {
     throw new Error(`Brak @google-cloud/bigquery w logistics: ${LOGISTICS_BQ}`)

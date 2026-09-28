@@ -7,6 +7,16 @@ const MONTH_LABELS = [
 const year = ref(2026)
 const month = ref(9)
 
+const monthItems = [
+  { label: 'Marzec 2026', value: 3 },
+  { label: 'Kwiecień 2026', value: 4 },
+  { label: 'Maj 2026', value: 5 },
+  { label: 'Czerwiec 2026', value: 6 },
+  { label: 'Lipiec 2026', value: 7 },
+  { label: 'Sierpień 2026', value: 8 },
+  { label: 'Wrzesień 2026', value: 9 }
+]
+
 const { data, pending, error, refresh } = await useFetch('/api/kpi', {
   query: computed(() => ({ year: year.value, month: month.value }))
 })
@@ -24,6 +34,11 @@ function scoreClass(value: number | null | undefined, target: number) {
   if (value == null) return 'text-muted'
   return value >= target ? 'text-success' : 'text-error'
 }
+
+const ticketsIncomplete = computed(() => {
+  const through = data.value?.coverage?.ticketsThrough
+  return Boolean(through && through < '2026-09-28')
+})
 </script>
 
 <template>
@@ -38,9 +53,13 @@ function scoreClass(value: number | null | undefined, target: number) {
           Metodyka jak w raporcie, od którego ruszył ten projekt.
         </p>
       </div>
-      <p class="text-sm text-muted">
-        {{ MONTH_LABELS[month] }} {{ year }}
-      </p>
+      <USelect
+        v-model="month"
+        :items="monthItems"
+        value-key="value"
+        class="w-48"
+        @update:model-value="refresh()"
+      />
     </div>
 
     <UCard
@@ -48,12 +67,18 @@ function scoreClass(value: number | null | undefined, target: number) {
       class="mt-6"
     >
       <p class="text-sm">
-        <strong>Pokrycie września.</strong>
+        <strong>Pokrycie danych.</strong>
         Tickety HubSpot (BQ) do {{ data.coverage.ticketsThrough }}.
         Czaty do {{ data.coverage.chatsThrough }}.
         CSAT e-mail/telefon do {{ data.coverage.csatThrough }}.
         <span v-if="data.coverage.monthInProgress">Miesiąc jeszcze trwa — retencja września nie jest dojrzała.</span>
         CSAT czatowy jest wyłączony z premii.
+        <span v-if="ticketsIncomplete">
+          Żeby domknąć cały wrzesień w ticketach BQ: wklej
+          <code>BQ_SERVICE_ACCOUNT_JSON</code> z Vercel logistics do lokalnego
+          <code>.env</code> i odpal <code>sfw npm run db:pull-bq</code>, potem
+          <code>sfw npm run db:import-sep</code>. Świeży CSAT wrzuć do Pobranych.
+        </span>
       </p>
     </UCard>
 
