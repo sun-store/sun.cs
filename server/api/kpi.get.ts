@@ -1,5 +1,5 @@
-import { loadKpiReport } from '../../services/kpi-report'
-import { requireUser } from '../../utils/session'
+import { loadKpiReport } from '../services/kpi-report'
+import { requireUser } from '../utils/session'
 
 export default defineEventHandler(async (event) => {
   await requireUser(event)
