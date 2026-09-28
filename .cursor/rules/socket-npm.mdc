@@ -1,0 +1,15 @@
+---
+description: Use Socket Firewall-wrapped npm/npx for all package and script commands in this repo
+alwaysApply: true
+---
+
+# Package commands — use Socket
+
+Lokalne komendy paczek idą przez **Socket Firewall** (`sfw`), tak jak w sun.logistics.
+
+- Use **`sfw npm …`** only — never raw **`npm …`** (`sfw npm install`, `sfw npm run dev`, `sfw npm test`, `sfw npm run lint`).
+- Use **`sfw npx …`** only — never raw **`npx …`**.
+
+**No fallback:** If `sfw` is missing or the command fails, **stop**. Do not retry with plain `npm` or `npx`. Report the failure and wait for the user.
+
+CI (`.github/workflows/ci.yml`) na GitHubie zostaje przy `npm ci` — runner nie ma Socketu. To nie jest pozwolenie, żeby agent lokalnie omijał `sfw`.

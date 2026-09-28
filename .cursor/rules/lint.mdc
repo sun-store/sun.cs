@@ -1,0 +1,35 @@
+---
+description: Konkretne reguły stylu, na których wywala się CI (npm run lint) — pisz tak, żeby przechodziło za pierwszym razem
+alwaysApply: true
+---
+
+CI (`.github/workflows/ci.yml`) uruchamia `npm test`, `npm run lint` i `npm run typecheck`. Czerwony lint blokuje
+merge, a `--fix` nie naprawia wszystkiego. Lint bierze konfigurację z `@nuxt/eslint` (stylistic ON).
+`eslint.config.mjs` dokłada tylko `eslint-plugin-better-tailwindcss`. Reguły, które realnie wywalają buildy:
+
+1. **Apostrofy pojedyncze** (`@stylistic/quotes`). `'ok'`, nie `"ok"`. Backticki tylko przy
+   interpolacji — `` `x=${v}` `` OK, `` `stały tekst` `` nie.
+2. **Jeden argument strzałki bez nawiasów, gdy ciało jest wyrażeniem** (`@stylistic/arrow-parens`):
+   `rows.map(r => r.id)`. Nawiasy zostają, gdy ciało jest blokiem: `rows.forEach((r) => { ... })`.
+3. **Jedna instrukcja na linię** (`@stylistic/max-statements-per-line`). To łapie skrót
+   `arr.forEach(k => { if (cond) delete o[k] })` — rozbij na linie albo napisz to inaczej.
+4. **Wcięcia w łańcuchach ternary** (`@stylistic/indent`): kontynuacja `? :` dostaje +2 spacje
+   względem warunku, nie tyle samo:
+   ```ts
+   const msg = err instanceof Error
+     ? err.message
+     : (typeof err === 'object' && err
+         ? String(err.statusMessage)
+         : String(err))
+   ```
+5. **Bez `delete obj[zmienna]`** (`@typescript-eslint/no-dynamic-delete`). Zamiast usuwać klucze
+   w miejscu, zbuduj nowy obiekt: `const { drop: _drop, ...rest } = row` i przypisz `row = rest`
+   (wtedy `let`, nie `const`).
+6. **Bez `any`** (`@typescript-eslint/no-explicit-any`). Gdy typ z biblioteki naprawdę wymaga `any`,
+   `// eslint-disable-next-line` stoi **bezpośrednio nad linią z `any`**. Komentarz nad `function`
+   przy wieloliniowej sygnaturze nie działa i dostaniesz błąd o nieużytej dyrektywie.
+7. **Nieużyte `eslint-disable` to błąd** (`reportUnusedDisableDirectives`). Usuwasz `any` — usuń też
+   dyrektywę.
+
+Przed oddaniem kodu: `sfw npm run lint`, potem `sfw npm run typecheck` i `sfw npm test`.
+Bezpieczeństwo i odczyt: `AGENTS.md`.

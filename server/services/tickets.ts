@@ -1,4 +1,5 @@
 import type {
+  AppRole,
   CallStatus,
   Channel,
   MessageDirection,
@@ -7,11 +8,33 @@ import type {
   TicketStatus
 } from '../../shared/domain'
 import { CATEGORIES } from '../../shared/domain'
+import { seesAllTickets } from '../../shared/access'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
 import type { IdentifierInput } from '../../shared/resolveContact'
+import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_LIMIT } from '../../shared/text-bounds'
+import { isUuid } from '../utils/uuid'
 import { neonQuery } from './neon-db'
 import { resolveContact } from './contacts'
 import { loadCustomerOrders } from './orders'
+
+export type TicketActor = {
+  role: AppRole
+  agentId: string | null
+}
+
+const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
+            t.related_transaction_id, t.owner_id, t.subject, t.created_at, t.first_contact_at,
+            t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id`
+
+const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
+              where e.ticket_id = t.id and e.call_status is not null
+              order by e.created_at asc limit 1)`
+
+function accessSql(actor: TicketActor | undefined, params: unknown[], alias = 't'): string {
+  if (!actor || seesAllTickets(actor.role)) return 'true'
+  params.push(actor.agentId)
+  return `${alias}.owner_id = $${params.length}::uuid`
+}
 
 export type TicketRow = {
   id: string
@@ -53,7 +76,7 @@ export async function listTickets(filters: {
   status?: TicketStatus | 'all'
   channel?: Channel | 'all'
   ownerId?: string | 'all'
-}) {
+}, actor?: TicketActor) {
   const clauses = ['1=1']
   const params: unknown[] = []
   if (filters.status && filters.status !== 'all') {
@@ -66,40 +89,47 @@ export async function listTickets(filters: {
   }
   if (filters.ownerId && filters.ownerId !== 'all') {
     params.push(filters.ownerId)
-    clauses.push(`t.owner_id = $${params.length}`)
+    clauses.push(`t.owner_id = $${params.length}::uuid`)
   }
+  clauses.push(accessSql(actor, params))
+  params.push(TICKET_LIST_LIMIT + 1)
 
   const rows = await neonQuery<TicketRow>(
-    `select t.*, c.display_name as contact_name, a.display_name as owner_name,
-            (select e.call_status from ticket_events e
-              where e.ticket_id = t.id and e.call_status is not null
-              order by e.created_at limit 1) as call_status
+    `select ${TICKET_COLUMNS}, c.display_name as contact_name, a.display_name as owner_name,
+            ${CALL_STATUS_SQL} as call_status
      from tickets t
      join contacts c on c.id = t.contact_id
      left join agents a on a.id = t.owner_id
      where ${clauses.join(' and ')}
      order by t.business_changed_at desc
-     limit 1000`,
+     limit $${params.length}`,
     params
   )
-  return rows.map(row => serializeTicket(row))
+  const truncated = rows.length > TICKET_LIST_LIMIT
+  const tickets = (truncated ? rows.slice(0, TICKET_LIST_LIMIT) : rows).map(row => serializeTicket(row))
+  return { tickets, truncated }
 }
 
-export async function getTicket(id: string) {
+export async function getTicket(id: string, actor?: TicketActor) {
+  if (!isUuid(id)) return null
+  const params: unknown[] = [id]
+  const access = accessSql(actor, params)
   const rows = await neonQuery<TicketRow>(
-    `select t.*, c.display_name as contact_name, a.display_name as owner_name,
-            (select e.call_status from ticket_events e
-              where e.ticket_id = t.id and e.call_status is not null
-              order by e.created_at limit 1) as call_status
+    `select ${TICKET_COLUMNS}, c.display_name as contact_name, a.display_name as owner_name,
+            ${CALL_STATUS_SQL} as call_status
      from tickets t
      join contacts c on c.id = t.contact_id
      left join agents a on a.id = t.owner_id
-     where t.id = $1`,
-    [id]
+     where t.id = $1::uuid and ${access}`,
+    params
   )
   if (!rows[0]) return null
   const events = await neonQuery<EventRow>(
-    'select * from ticket_events where ticket_id = $1 order by created_at asc',
+    `select id, ticket_id, channel, direction, sender_type, body, subject,
+            email_message_id, external_thread_id, call_status, call_duration_seconds, created_at
+     from ticket_events
+     where ticket_id = $1
+     order by created_at asc`,
     [id]
   )
   const ticket = serializeTicket(rows[0], events)
@@ -138,26 +168,44 @@ export async function createTicket(input: {
   senderType?: SenderType
   externalThreadId?: string | null
 }) {
+  const displayName = boundedText(input.displayName, TEXT_LIMITS.name, 'Imię')
+  if (!displayName) throw new Error('Wymagane: imię.')
+  const body = boundedText(input.body, TEXT_LIMITS.body, 'Treść')
+  if (!body) throw new Error('Wymagane: treść.')
+  const subject = optionalText(input.subject, TEXT_LIMITS.subject, 'Temat')
+  const email = optionalText(input.email, TEXT_LIMITS.email, 'E-mail')
+  const phone = optionalText(input.phone, TEXT_LIMITS.phone, 'Telefon')
+  const whatsapp = optionalText(input.whatsapp, TEXT_LIMITS.phone, 'WhatsApp')
+  const sunstoreUserId = optionalText(input.sunstoreUserId, TEXT_LIMITS.externalId, 'Id sun.store')
+  const hubspotContactId = optionalText(input.hubspotContactId, TEXT_LIMITS.externalId, 'Id HubSpot')
+  const relatedTransactionId = optionalText(input.relatedTransactionId, TEXT_LIMITS.transactionId, 'Numer zlecenia')
+  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.externalId, 'Wątek')
+  if (input.ownerId && !isUuid(input.ownerId)) {
+    throw new Error('Nieznany właściciel.')
+  }
   if (input.channel === 'phone' && !input.callStatus) {
     throw new Error('Telefon wymaga statusu odebrania.')
   }
   const identifiers: IdentifierInput[] = []
-  if (input.email) identifiers.push({ type: 'email', value: input.email, source: 'manual' })
-  if (input.phone) identifiers.push({ type: 'phone', value: input.phone, source: 'manual' })
-  if (input.whatsapp) identifiers.push({ type: 'whatsapp', value: input.whatsapp, source: 'manual' })
-  if (input.sunstoreUserId) identifiers.push({ type: 'sunstore_user', value: input.sunstoreUserId, source: 'manual' })
-  if (input.hubspotContactId) identifiers.push({ type: 'hubspot_contact', value: input.hubspotContactId, source: 'manual' })
+  if (email) identifiers.push({ type: 'email', value: email, source: 'manual' })
+  if (phone) identifiers.push({ type: 'phone', value: phone, source: 'manual' })
+  if (whatsapp) identifiers.push({ type: 'whatsapp', value: whatsapp, source: 'manual' })
+  if (sunstoreUserId) identifiers.push({ type: 'sunstore_user', value: sunstoreUserId, source: 'manual' })
+  if (hubspotContactId) identifiers.push({ type: 'hubspot_contact', value: hubspotContactId, source: 'manual' })
 
   const resolved = await resolveContact({
-    displayName: input.displayName,
+    displayName,
     customerRole: input.customerRole,
-    sunstoreUserId: input.sunstoreUserId,
-    hubspotContactId: input.hubspotContactId,
+    sunstoreUserId,
+    hubspotContactId,
     identifiers,
     source: 'manual'
   })
 
   const firstContactAt = input.firstContactAt ? new Date(input.firstContactAt) : new Date()
+  if (Number.isNaN(firstContactAt.getTime())) {
+    throw new Error('Nieprawidłowa data kontaktu.')
+  }
   const senderType = input.senderType || 'customer'
   const direction = senderType === 'agent' ? 'to_customer' : 'to_customer'
   const firstAgentReplyAt = senderType === 'agent' || input.callStatus === 'answered'
@@ -173,8 +221,8 @@ export async function createTicket(input: {
     [
       resolved.contact.id,
       input.channel,
-      input.subject?.trim() || null,
-      input.relatedTransactionId?.trim() || null,
+      subject,
+      relatedTransactionId,
       input.ownerId || null,
       firstContactAt,
       firstAgentReplyAt
@@ -190,10 +238,10 @@ export async function createTicket(input: {
       input.channel,
       direction,
       senderType,
-      input.body,
-      input.subject?.trim() || null,
+      body,
+      subject,
       input.callStatus || null,
-      input.externalThreadId || null,
+      externalThreadId,
       firstContactAt
     ]
   )
@@ -209,13 +257,18 @@ export async function addEvent(ticketId: string, input: {
   callStatus?: CallStatus | null
   externalThreadId?: string | null
   occurredAt?: Date
-}) {
+}, actor?: TicketActor) {
+  if (!isUuid(ticketId)) return null
+  const body = boundedText(input.body, TEXT_LIMITS.body, 'Treść')
+  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.externalId, 'Wątek')
+  const params: unknown[] = [ticketId]
+  const access = accessSql(actor, params)
   const tickets = await neonQuery<{
     first_agent_reply_at: Date | null
     closed_at: Date | null
   }>(
-    'select first_agent_reply_at, closed_at from tickets where id = $1',
-    [ticketId]
+    `select first_agent_reply_at, closed_at from tickets t where t.id = $1::uuid and ${access}`,
+    params
   )
   if (!tickets[0]) return null
   if (tickets[0].closed_at) {
@@ -226,7 +279,7 @@ export async function addEvent(ticketId: string, input: {
   await neonQuery(
     `insert into ticket_events (ticket_id, channel, direction, sender_type, body, call_status, external_thread_id, created_at)
      values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [ticketId, input.channel, input.direction, input.senderType, input.body, input.callStatus || null, input.externalThreadId || null, now]
+    [ticketId, input.channel, input.direction, input.senderType, body, input.callStatus || null, externalThreadId, now]
   )
 
   let firstReply = tickets[0].first_agent_reply_at
@@ -243,7 +296,7 @@ export async function addEvent(ticketId: string, input: {
     [ticketId, firstReply, now]
   )
 
-  return getTicket(ticketId)
+  return getTicket(ticketId, actor)
 }
 
 export async function updateTicket(ticketId: string, input: {
@@ -252,14 +305,23 @@ export async function updateTicket(ticketId: string, input: {
   category?: string | null
   priority?: TicketPriority | null
   relatedTransactionId?: string | null
-}) {
+}, actor?: TicketActor) {
+  if (!isUuid(ticketId)) return null
+  if (input.ownerId && !isUuid(input.ownerId)) {
+    throw new Error('Nieznany właściciel.')
+  }
+  const relatedTransactionId = input.relatedTransactionId === undefined
+    ? undefined
+    : optionalText(input.relatedTransactionId, TEXT_LIMITS.transactionId, 'Numer zlecenia')
+  const params: unknown[] = [ticketId]
+  const access = accessSql(actor, params)
   const current = await neonQuery<{
     status: TicketStatus
     category: string | null
     priority: TicketPriority | null
   }>(
-    'select status, category, priority from tickets where id = $1',
-    [ticketId]
+    `select status, category, priority from tickets t where t.id = $1::uuid and ${access}`,
+    params
   )
   if (!current[0]) return null
 
@@ -276,7 +338,7 @@ export async function updateTicket(ticketId: string, input: {
     }
   }
 
-  await neonQuery(
+  const updated = await neonQuery<{ id: string }>(
     `update tickets
      set owner_id = coalesce($2, owner_id),
          status = $3,
@@ -285,17 +347,19 @@ export async function updateTicket(ticketId: string, input: {
          related_transaction_id = coalesce($6, related_transaction_id),
          closed_at = case when $3 = 'closed' then coalesce(closed_at, now()) else null end,
          business_changed_at = now()
-     where id = $1`,
+     where id = $1
+     returning id`,
     [
       ticketId,
       input.ownerId ?? null,
       nextStatus,
       nextCategory,
       nextPriority,
-      input.relatedTransactionId ?? null
+      relatedTransactionId ?? null
     ]
   )
-  return getTicket(ticketId)
+  if (!updated[0]) return null
+  return getTicket(ticketId, actor)
 }
 
 export async function listAgents() {
@@ -305,25 +369,50 @@ export async function listAgents() {
 }
 
 export async function createAgent(displayName: string, email?: string) {
+  const name = boundedText(displayName, TEXT_LIMITS.name, 'Imię')
+  if (!name) throw new Error('Podaj imię agenta.')
+  const normalizedEmail = optionalText(email, TEXT_LIMITS.email, 'E-mail')?.toLowerCase() ?? null
   const rows = await neonQuery<{ id: string, display_name: string, email: string | null }>(
     `insert into agents (display_name, email)
      values ($1, $2)
      returning id, display_name, email`,
-    [displayName.trim(), email?.trim().toLowerCase() || null]
+    [name, normalizedEmail]
   )
   return rows[0]
 }
 
-export async function ticketSummary() {
-  const rows = await listTickets({ status: 'all' })
-  const open = rows.filter(row => row.status !== 'closed')
-  const slaPool = rows.filter(row => row.sla.eligible)
-  const slaMet = slaPool.filter(row => row.sla.met)
-  return {
-    open: open.length,
-    slaEligible: slaPool.length,
-    slaMet: slaMet.length
+export async function ticketSummary(actor?: TicketActor) {
+  const params: unknown[] = []
+  const access = accessSql(actor, params)
+  const rows = await neonQuery<{
+    status: TicketStatus
+    origin_channel: TicketRow['origin_channel']
+    first_contact_at: Date
+    first_agent_reply_at: Date | null
+    call_status: CallStatus | null
+  }>(
+    `select t.status, t.origin_channel, t.first_contact_at, t.first_agent_reply_at,
+            ${CALL_STATUS_SQL} as call_status
+     from tickets t
+     where ${access}`,
+    params
+  )
+  let open = 0
+  let slaEligible = 0
+  let slaMet = 0
+  for (const row of rows) {
+    if (row.status !== 'closed') open += 1
+    const sla = evaluateSla({
+      channel: row.origin_channel,
+      firstContactAt: new Date(row.first_contact_at),
+      firstAgentReplyAt: row.first_agent_reply_at ? new Date(row.first_agent_reply_at) : null,
+      callStatus: row.call_status
+    })
+    if (!sla.eligible) continue
+    slaEligible += 1
+    if (sla.met) slaMet += 1
   }
+  return { open, slaEligible, slaMet }
 }
 
 function serializeTicket(row: TicketRow, events: EventRow[] = []) {

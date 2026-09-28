@@ -1,0 +1,20 @@
+---
+description: Wzorce, na których wywala się CI (npm run typecheck / vue-tsc) — pisz tak, żeby przechodziło za pierwszym razem
+alwaysApply: true
+---
+
+CI (`.github/workflows/ci.yml`) uruchamia `npm run typecheck` (`nuxt typecheck` / vue-tsc). Czerwony typecheck
+blokuje merge.
+
+1. **Indeksowane i opcjonalne wartości są `string | undefined`.** Zanim przekażesz je do funkcji
+   oczekującej `string`, daj `?? ''` albo zawęź `if (v)`. Nie zakładaj, że klucz istnieje.
+   To samo dotyczy `datePart` / `timePart` po `split`.
+2. **`nuxt.config.ts` przyjmuje tylko znane klucze `NuxtConfig`.** Opcje Nitro (externals, presety)
+   idą do bloku `nitro: { ... }` — np. wykluczenie paczek z bundla to `nitro.externals.external`,
+   nie `serverExternalPackages` (to opcja Next.js, TS2353).
+3. **Nowy import = zależność w `package.json` + `package-lock.json`.** CI robi `npm ci` — import
+   paczki spoza locka wywala typecheck (TS2307). Po dopisaniu zależności odpal lokalnie `sfw npm install`.
+4. **SQL idzie przez `neonQuery` z parametrami `$1`.** Nie ma klienta Supabase. Nie dokładaj
+   `.from().eq()` ani generowania typów schematu.
+
+Przed oddaniem kodu: pełny `sfw npm run typecheck`, nie tylko zmieniony plik. Styl: `.cursor/rules/lint.mdc`. Architektura: `AGENTS.md`.

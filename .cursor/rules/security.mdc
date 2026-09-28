@@ -1,0 +1,16 @@
+---
+description: sun.cs security rules — full version in AGENTS.md
+alwaysApply: true
+---
+
+Pełne zasady: `AGENTS.md` w katalogu głównym. Skrót:
+
+1. **Każdy handler w `server/api/**` zaczyna się od guarda** (`requireUser` / `requireAdmin` z `server/utils/session.ts`). Endpoint bez guarda = blocker. Jedyny wyjątek: `server/api/auth/[...all].ts`.
+2. **Neon omija RLS.** Zakres wiersza dokłada `accessSql` w `server/services/tickets.ts` (`seesAllTickets`: admin i lead widzą wszystko, agent tylko `owner_id`). Import i inbound nie podają aktora. Handler API zawsze podaje użytkownika z sesji.
+3. **Waliduj input**: `isUuid` z `server/utils/uuid.ts`, limity z `shared/text-bounds.ts`, biała lista pól. Nigdy `...body` do zapisu.
+4. **Zero wklejania inputu w SQL.** Parametry `$1`. Enumy sprawdzaj po `shared/domain.ts`, zanim trafią do zapytania.
+5. **Po UPDATE/DELETE sprawdź zwrócony wiersz.** Puste `returning` to 404, nie sukces.
+6. **Sekrety zostają na serwerze** — nie w `runtimeConfig.public`, nie w logach, nie w odpowiedzi do klienta. W `public` tylko flagi przycisków SSO.
+7. **Przed oddaniem:** `sfw npm run lint`, `sfw npm run typecheck` i `sfw npm test` muszą być zielone.
+
+Importy względne. Alias `~~/` jest w stronach Nuxt; w `server/` trzymaj się `../`.

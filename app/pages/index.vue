@@ -7,7 +7,7 @@ import {
   type TicketStatus
 } from '~~/shared/domain'
 
-const status = ref<TicketStatus | 'all'>('open')
+const status = ref<TicketStatus | 'all'>('all')
 const channel = ref<Channel | 'all'>('all')
 
 const { data, refresh, pending, error } = await useFetch('/api/tickets', {
@@ -44,7 +44,7 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">
-          Sprawy
+          Tickety
         </h1>
         <p class="mt-1 text-sm text-muted">
           Otwarte {{ data?.summary.open ?? 0 }}
@@ -147,6 +147,12 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
           </tr>
         </tbody>
       </table>
+      <p
+        v-if="data?.truncated"
+        class="mt-4 text-sm text-muted"
+      >
+        Lista pokazuje 1000 najnowszych spraw. Starsze są w bazie, tu ich nie ma.
+      </p>
     </UCard>
   </div>
 </template>

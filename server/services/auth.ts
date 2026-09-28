@@ -21,6 +21,13 @@ function microsoftSocialProvider() {
   }
 }
 
+function originFromEnv(raw?: string) {
+  const value = String(raw || '').trim().replace(/\/$/, '')
+  if (!value) return ''
+  if (value.startsWith('http://') || value.startsWith('https://')) return value
+  return `https://${value}`
+}
+
 function googleSocialProvider() {
   if (!isGoogleSsoConfigured()) return undefined
   return {
@@ -42,10 +49,12 @@ export function createBetterAuth() {
 
   const baseURL = (process.env.BETTER_AUTH_URL || 'http://localhost:3000').replace(/\/$/, '')
   const providers = { ...microsoftSocialProvider(), ...googleSocialProvider() }
-  const vercelOrigin = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '')}`
-    : ''
-  const trustedOrigins = [...new Set([baseURL, vercelOrigin].filter(Boolean))]
+  const trustedOrigins = [...new Set([
+    baseURL,
+    originFromEnv(process.env.VERCEL_URL),
+    originFromEnv(process.env.VERCEL_PROJECT_PRODUCTION_URL),
+    'https://sun-cs.vercel.app'
+  ].filter(Boolean))]
 
   return betterAuth({
     database: getNeonPool(),
