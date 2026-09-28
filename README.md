@@ -1,6 +1,8 @@
-# sun.cs
+# sun.support
 
-Ticketownia Customer Support sun.store: e-mail, WhatsApp, telefon i sprawy agenta AI w jednym inboxie. Kontakt jest rekordem sun.cs, spiętym z userem sun.store i kontaktem HubSpot. SLA liczy się z pierwszego kontaktu i pierwszej odpowiedzi do klienta, w czasie Europe/Warsaw.
+Ticketownia Customer Support sun.store: e-mail, WhatsApp, telefon i sprawy agenta AI w jednym inboxie. Kontakt jest rekordem sun.support, spiętym z userem sun.store i kontaktem HubSpot. SLA liczy się z pierwszego kontaktu i pierwszej odpowiedzi do klienta, w czasie Europe/Warsaw.
+
+Brand kit (draft v3): [docs/brand/AGENT.md](docs/brand/AGENT.md).
 
 Umowa produktowa: [docs/wymagania-kpi.md](docs/wymagania-kpi.md).
 

@@ -86,14 +86,14 @@ export function createBetterAuth() {
             }
             const allowed = await findAllowlistRole(user.email)
             if (!allowed) {
-              throw new Error('Nie ma Cię na liście sun.cs. Poproś admina o dopisanie.')
+              throw new Error('Nie ma Cię na liście sun.support. Poproś admina o dopisanie.')
             }
             return { data: user }
           },
           after: async (user) => {
             const role = await findAllowlistRole(user.email)
             if (!role) {
-              throw new Error('Nie ma Cię na liście sun.cs. Poproś admina o dopisanie.')
+              throw new Error('Nie ma Cię na liście sun.support. Poproś admina o dopisanie.')
             }
             await neonQuery(
               `insert into staff (user_id, role, display_name)

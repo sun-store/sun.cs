@@ -1,0 +1,13 @@
+---
+description: sun.support brand kit — name, logo, colours, type
+alwaysApply: true
+---
+
+Source of truth: `docs/brand/AGENT.md` (draft v3). Assets in `public/brand/` and `app/assets/fonts/`.
+
+1. **Name in UI copy:** always `sun.support` (lowercase, with the dot). Never "Sun Support", "SunSupport", "sun.cs" or "sun-support". Former working name `sun.cs` is retired.
+2. **Lockup** (`public/brand/logo/…lockup-*.svg`): header, login, emails, documents. Black lockup on white/gray; white lockup on black/photos. Do not recolour, stretch, retype, or add effects. Min height 16 px; clear space ≥ logomark height.
+3. **App icon** (`public/brand/app-icon/…`): favicon, home screen, taskbar. Prefer dark (black tile). Prefer 32 px over 16 px for favicons. Never put the lockup inside the icon.
+4. **Colours only:** Green `#2EBB6F` (CTAs/positive), Yellow `#F6D736` (logomark/decoration — never text), Black `#000000`, White `#FFFFFF`, Gray `#F8F8F8`, Body `#727487`. No other greys, no blues.
+5. **Type:** Aeonik (Medium 500 headings, Regular 400 body). Fallback `'Inter', 'DM Sans', sans-serif`. Bold only inside the logo SVG. Do not commit Aeonik outside this private sun.store project / do not redistribute.
+6. **UI:** primary button green + white text, radius ≤ 8 px; secondary = 1 px black border; cards white or gray. Status: draft — internal builds only until marketing signs off the modified logomark.

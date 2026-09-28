@@ -124,13 +124,13 @@ async function signUp() {
   <div class="flex min-h-[80vh] items-center justify-center">
     <UCard class="w-full max-w-md">
       <template #header>
-        <p class="text-sm text-muted">
-          Customer Support
-        </p>
-        <h1 class="text-xl font-semibold">
-          sun.cs
-        </h1>
-        <p class="mt-1 text-sm text-muted">
+        <img
+          src="/brand/logo/sunstore_logo_sun-support_lockup-black_v3.svg"
+          alt="sun.support"
+          class="h-6 w-auto"
+          height="24"
+        >
+        <p class="mt-3 text-sm text-muted">
           {{ firmSso ? 'Wejdź kontem firmowym @sun.store — tak samo jak w logistics.' : 'Wejdź adresem @sun.store. Musisz być na liście zespołu.' }}
         </p>
       </template>

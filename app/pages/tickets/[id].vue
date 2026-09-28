@@ -129,7 +129,7 @@ async function closeTicket() {
           Ten kontakt zderzył się z innym rekordem ({{ (data.conflictIds || data.contact?.conflictIds || []).length }}).
           Nie scalamy automatycznie — sprawdź, czy to ta sama osoba.
         </div>
-        <h1 class="text-2xl font-semibold tracking-tight">
+        <h1 class="text-2xl font-medium tracking-tight">
           {{ data.contact?.display_name || data.contactName }}
         </h1>
         <p class="mt-1 text-sm text-muted">

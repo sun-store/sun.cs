@@ -30,7 +30,7 @@ function scoreClass(value: number | null | undefined, target: number) {
   <div class="py-8">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight">
+        <h1 class="text-2xl font-medium tracking-tight">
           Wyniki
         </h1>
         <p class="mt-1 text-sm text-muted">
@@ -78,7 +78,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           FCR ≥ {{ pct(data.targets.fcr) }}
         </p>
-        <p :class="['mt-1 text-2xl font-semibold', scoreClass(data.team.fcrR, data.targets.fcr)]">
+        <p :class="['mt-1 text-2xl font-medium', scoreClass(data.team.fcrR, data.targets.fcr)]">
           {{ pct(data.team.fcrR) }}
         </p>
         <p class="text-xs text-muted">
@@ -89,7 +89,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           SLA ≥ {{ pct(data.targets.sla) }}
         </p>
-        <p :class="['mt-1 text-2xl font-semibold', scoreClass(data.team.slaR, data.targets.sla)]">
+        <p :class="['mt-1 text-2xl font-medium', scoreClass(data.team.slaR, data.targets.sla)]">
           {{ pct(data.team.slaR) }}
         </p>
         <p class="text-xs text-muted">
@@ -100,7 +100,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           CSAT ≥ {{ pct(data.targets.csat) }}
         </p>
-        <p :class="['mt-1 text-2xl font-semibold', scoreClass(data.team.csatR, data.targets.csat)]">
+        <p :class="['mt-1 text-2xl font-medium', scoreClass(data.team.csatR, data.targets.csat)]">
           {{ pct(data.team.csatR) }}
         </p>
         <p class="text-xs text-muted">
@@ -111,7 +111,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           Retencja ≥ {{ pct(data.targets.retention) }}
         </p>
-        <p :class="['mt-1 text-2xl font-semibold', scoreClass(data.team.retR, data.targets.retention)]">
+        <p :class="['mt-1 text-2xl font-medium', scoreClass(data.team.retR, data.targets.retention)]">
           {{ pct(data.team.retR) }}
         </p>
         <p class="text-xs text-muted">
@@ -122,7 +122,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           QA ≥ {{ pct(data.targets.qa) }}
         </p>
-        <p :class="['mt-1 text-2xl font-semibold', scoreClass(data.team.qaR, data.targets.qa)]">
+        <p :class="['mt-1 text-2xl font-medium', scoreClass(data.team.qaR, data.targets.qa)]">
           {{ pct(data.team.qaR) }}
         </p>
         <p class="text-xs text-muted">
@@ -133,7 +133,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         <p class="text-xs text-muted">
           Premia (max 100)
         </p>
-        <p class="mt-1 text-2xl font-semibold">
+        <p class="mt-1 text-2xl font-medium">
           {{ data.team.bonus ?? '—' }}
         </p>
         <p class="text-xs text-muted">

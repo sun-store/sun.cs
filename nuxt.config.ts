@@ -16,7 +16,7 @@ export default defineNuxtConfig({
     betterAuthSecret: '',
     betterAuthUrl: 'http://localhost:3000',
     public: {
-      siteName: 'sun.cs',
+      siteName: 'sun.support',
       microsoftSso: Boolean(String(process.env.MICROSOFT_CLIENT_ID || '').trim()),
       googleSso: Boolean(String(process.env.GOOGLE_CLIENT_ID || '').trim())
     }

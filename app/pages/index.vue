@@ -43,7 +43,7 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
   <div class="py-8">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight">
+        <h1 class="text-2xl font-medium tracking-tight">
           Tickety
         </h1>
         <p class="mt-1 text-sm text-muted">

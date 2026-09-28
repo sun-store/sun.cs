@@ -1,17 +1,17 @@
-# Wersja webowa na Vercel — sun.cs
+# Wersja webowa na Vercel — sun.support
 
 Osobny projekt, nie `sun-logistics`. Ta sama baza Neon co lokalnie (albo nowa, jeśli wolisz).
 
 ## 1. Kod na GitHubie
 
-Vercel wgrywa z repo. Jeśli `sun.cs` nie ma jeszcze remote: wypchnij folder na GitHub (prywatny), potem wróć tu.
+Vercel wgrywa z repo. Jeśli lokalny folder `sun.cs` nie ma jeszcze remote: wypchnij na GitHub (prywatny), potem wróć tu.
 
 ## 2. Nowy projekt Vercel
 
 Na dashboardzie teamu (ten z kafelkami):
 
 1. **Add New → Project**
-2. Zaimportuj repo **sun.cs** (nie logistics)
+2. Zaimportuj repo **sun.cs** (folder lokalny; produkt to sun.support)
 3. Framework: Nuxt (wykryje sam)
 4. **jeszcze nie Deploy** — najpierw Environment Variables → Production:
 

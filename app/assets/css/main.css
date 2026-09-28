@@ -1,18 +1,99 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
-@theme static {
-  --font-sans: 'Public Sans', sans-serif;
+@font-face {
+  font-family: 'Aeonik';
+  src: url('../fonts/Aeonik-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
-  --color-green-50: #EFFDF5;
-  --color-green-100: #D9FBE8;
-  --color-green-200: #B3F5D1;
-  --color-green-300: #75EDAE;
-  --color-green-400: #00DC82;
-  --color-green-500: #00C16A;
-  --color-green-600: #00A155;
-  --color-green-700: #007F45;
-  --color-green-800: #016538;
-  --color-green-900: #0A5331;
-  --color-green-950: #052E16;
+@font-face {
+  font-family: 'Aeonik';
+  src: url('../fonts/Aeonik-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aeonik';
+  src: url('../fonts/Aeonik-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme static {
+  --font-sans: 'Aeonik', 'Inter', 'DM Sans', sans-serif;
+
+  /* sun.support palette — green is the only accent scale */
+  --color-green-50: #EAF9F1;
+  --color-green-100: #D5F3E3;
+  --color-green-200: #ABE7C7;
+  --color-green-300: #82DBAB;
+  --color-green-400: #58CF8F;
+  --color-green-500: #2EBB6F;
+  --color-green-600: #2EBB6F;
+  --color-green-700: #25965A;
+  --color-green-800: #1C7144;
+  --color-green-900: #134C2E;
+  --color-green-950: #0A2818;
+
+  --color-sun-yellow: #F6D736;
+  --color-sun-black: #000000;
+  --color-sun-white: #FFFFFF;
+  --color-sun-gray: #F8F8F8;
+  --color-sun-body: #727487;
+}
+
+:root {
+  --sun-green: #2EBB6F;
+  --sun-yellow: #F6D736;
+  --sun-black: #000000;
+  --sun-white: #FFFFFF;
+  --sun-gray: #F8F8F8;
+  --sun-body: #727487;
+  --radius-button: 8px;
+}
+
+.light,
+:root {
+  --ui-text-dimmed: var(--sun-body);
+  --ui-text-muted: var(--sun-body);
+  --ui-text-toned: var(--sun-black);
+  --ui-text: var(--sun-black);
+  --ui-text-highlighted: var(--sun-black);
+  --ui-bg: var(--sun-white);
+  --ui-bg-muted: var(--sun-gray);
+  --ui-bg-elevated: var(--sun-gray);
+  --ui-bg-accented: #EEEEEE;
+  --ui-bg-inverted: var(--sun-black);
+  --ui-border: #E8E8E8;
+  --ui-border-muted: #E8E8E8;
+  --ui-border-accented: #D0D0D0;
+  --ui-border-inverted: var(--sun-black);
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--sun-black);
+  background: var(--sun-white);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+p,
+li,
+td,
+th,
+label {
+  line-height: 1.45;
 }

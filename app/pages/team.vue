@@ -38,11 +38,11 @@ async function addMember() {
 
 <template>
   <div class="py-8">
-    <h1 class="text-2xl font-semibold tracking-tight">
+    <h1 class="text-2xl font-medium tracking-tight">
       Zespół
     </h1>
     <p class="mt-1 text-sm text-muted">
-      Tylko osoby z tej listy wejdą do sun.cs. Agentów wpuszczamy w następnym kroku.
+      Tylko osoby z tej listy wejdą do sun.support. Agentów wpuszczamy w następnym kroku.
     </p>
 
     <p

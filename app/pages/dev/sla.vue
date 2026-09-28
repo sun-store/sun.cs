@@ -85,9 +85,9 @@ const statusLabel = computed(() => {
     <UContainer class="py-10">
       <div class="max-w-2xl">
         <p class="text-sm text-muted">
-          sun.cs · piaskownica
+          sun.support · piaskownica
         </p>
-        <h1 class="mt-2 text-3xl font-semibold tracking-tight">
+        <h1 class="mt-2 text-3xl font-medium tracking-tight">
           Zegar SLA liczy się w Warszawie, nie w UTC
         </h1>
       </div>

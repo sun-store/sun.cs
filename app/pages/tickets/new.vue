@@ -99,7 +99,7 @@ async function submit() {
 
 <template>
   <div class="py-8">
-    <h1 class="text-2xl font-semibold tracking-tight">
+    <h1 class="text-2xl font-medium tracking-tight">
       Nowa sprawa
     </h1>
     <p class="mt-1 text-sm text-muted">

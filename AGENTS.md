@@ -1,6 +1,8 @@
-# AGENTS.md — sun.cs
+# AGENTS.md — sun.support
 
-Zasady, które agent ma stosować przy każdej zmianie, są też w `.cursor/rules/` (lint, typecheck, bezpieczeństwo, Socket przy `npm`).
+Zasady, które agent ma stosować przy każdej zmianie, są też w `.cursor/rules/` (lint, typecheck, bezpieczeństwo, brand, Socket przy `npm`).
+
+**Nazwa produktu w UI:** `sun.support` (zawsze małe litery, z kropką). Dawna nazwa robocza `sun.cs` jest wycofana. Brand kit: `docs/brand/AGENT.md`.
 
 Ticketownia Customer Support. Neon (właściciel połączenia, RLS nie działa). Better Auth.
 

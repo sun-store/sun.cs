@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const route = useRoute()
+const colorMode = useColorMode()
 const me = ref<{ name: string, email: string, role?: string } | null>(null)
 
 async function loadMe() {
@@ -22,13 +23,24 @@ async function logout() {
   await navigateTo('/login')
 }
 
+const lockupSrc = computed(() =>
+  colorMode.value === 'dark'
+    ? '/brand/logo/sunstore_logo_sun-support_lockup-white_v3.svg'
+    : '/brand/logo/sunstore_logo_sun-support_lockup-black_v3.svg'
+)
+
 useHead({
-  htmlAttrs: { lang: 'pl' }
+  htmlAttrs: { lang: 'pl' },
+  link: [
+    { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+    { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
+    { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }
+  ]
 })
 
 useSeoMeta({
-  title: 'sun.cs',
-  description: 'Ticketownia Customer Support sun.store.'
+  title: 'sun.support',
+  description: 'Customer service app for sun.store.'
 })
 </script>
 
@@ -37,30 +49,36 @@ useSeoMeta({
     <UHeader v-if="route.path !== '/login' && !route.path.startsWith('/dev/') && !route.path.startsWith('/auth/')">
       <template #left>
         <div class="flex items-center">
-        <NuxtLink
-          to="/"
-          class="rounded-md p-1 -ms-1 font-semibold tracking-tight"
-        >
-          sun.cs
-        </NuxtLink>
-        <nav class="ms-4 flex gap-1">
-          <UButton
+          <NuxtLink
             to="/"
-            :variant="route.path === '/' || route.path.startsWith('/tickets') ? 'soft' : 'ghost'"
-            color="neutral"
-            size="sm"
+            class="rounded-md p-1 -ms-1"
+            aria-label="sun.support"
           >
-            Tickety
-          </UButton>
-          <UButton
-            to="/wyniki"
-            :variant="route.path.startsWith('/wyniki') ? 'soft' : 'ghost'"
-            color="neutral"
-            size="sm"
-          >
-            Wyniki
-          </UButton>
-        </nav>
+            <img
+              :src="lockupSrc"
+              alt="sun.support"
+              class="h-5 w-auto"
+              height="20"
+            >
+          </NuxtLink>
+          <nav class="ms-4 flex gap-1">
+            <UButton
+              to="/"
+              :variant="route.path === '/' || route.path.startsWith('/tickets') ? 'soft' : 'ghost'"
+              color="neutral"
+              size="sm"
+            >
+              Tickety
+            </UButton>
+            <UButton
+              to="/wyniki"
+              :variant="route.path.startsWith('/wyniki') ? 'soft' : 'ghost'"
+              color="neutral"
+              size="sm"
+            >
+              Wyniki
+            </UButton>
+          </nav>
         </div>
       </template>
       <template #right>

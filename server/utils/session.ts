@@ -31,7 +31,7 @@ export async function requireUser(event: H3Event): Promise<SessionUser> {
 
   const staff = await ensureStaff(session.user)
   if (!staff) {
-    throw createError({ statusCode: 403, statusMessage: 'Nie ma Cię na liście sun.cs. Poproś admina o dopisanie.' })
+    throw createError({ statusCode: 403, statusMessage: 'Nie ma Cię na liście sun.support. Poproś admina o dopisanie.' })
   }
   if (staff.role === 'agent') {
     throw createError({ statusCode: 403, statusMessage: 'Logowanie agentów jeszcze nie jest włączone.' })
