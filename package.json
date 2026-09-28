@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "node scripts/neon-migrate.mjs",
+    "db:pull-bq": "node scripts/pull-hubspot-bq-delta.mjs",
     "db:import-sep": "node scripts/import-hubspot-september.mjs"
   },
   "dependencies": {

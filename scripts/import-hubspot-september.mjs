@@ -13,14 +13,14 @@ const YEAR = 2026
 const MONTH = 8
 const CS_JULY = resolve('C:/Users/martyna.kalicka/Downloads/cs_july_work')
 const DOWNLOADS = resolve('C:/Users/martyna.kalicka/Downloads')
-const BQ_FILES = [
-  'tickets_delta.json',
-  'tickets_delta2_aug04.json',
-  'tickets_delta3_aug14.json',
-  'tickets_delta4_aug24.json',
-  'tickets_delta5_aug28.json',
-  'tickets_delta6_sep02.json'
-]
+function listBqTicketFiles() {
+  const dir = resolve(CS_JULY, 'bq_raw')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter(name => /^tickets_delta.*\.json$/i.test(name))
+    .sort()
+    .map(name => resolve(dir, name))
+}
 const BOT_OWNER_IDS = new Set(['34396953', '30675564'])
 const BOT_EMAIL_RE = /aichatbot|customer agent|sunstore agent/i
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
@@ -161,9 +161,7 @@ function loadOwners() {
 
 function loadSeptemberTickets() {
   const byId = new Map()
-  for (const name of BQ_FILES) {
-    const full = resolve(CS_JULY, 'bq_raw', name)
-    if (!existsSync(full)) continue
+  for (const full of listBqTicketFiles()) {
     for (const row of bqRowsToObjects(full)) byId.set(String(row.id), row)
   }
   return [...byId.values()].filter((row) => {
@@ -577,7 +575,7 @@ async function main() {
         conversationThreadsInSeptember: threads.length,
         latestBqTicketCreate: latestTicketCreate ? latestTicketCreate.toISOString() : null,
         latestConversationMessage: latestThread ? latestThread.toISOString() : null,
-        note: 'Tickety BQ są tylko do zrzutu z 2.09. Wątki czatu pokrywają wrzesień do ~24.09.'
+        note: 'Tickety BQ z wszystkich plików tickets_delta*.json. Czaty z conversations-2026-09-*.json w Pobranych.'
       },
       imported: stats,
       database: counts.rows[0]

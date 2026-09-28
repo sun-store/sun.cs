@@ -53,7 +53,7 @@ function scoreClass(value: number | null | undefined, target: number) {
         Czaty do {{ data.coverage.chatsThrough }}.
         CSAT e-mail/telefon do {{ data.coverage.csatThrough }}.
         <span v-if="data.coverage.monthInProgress">Miesiąc jeszcze trwa — retencja września nie jest dojrzała.</span>
-        CSAT czatowy jest wyłączony z premii. BigQuery po 2.09 nie dało się dociągnąć (brak klucza SA).
+        CSAT czatowy jest wyłączony z premii.
       </p>
     </UCard>
 
