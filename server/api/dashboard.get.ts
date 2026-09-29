@@ -12,5 +12,11 @@ export default defineEventHandler(async (event) => {
   if (!Number.isInteger(month) || month < 1 || month > 12) {
     throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowy miesiąc.' })
   }
-  return loadDashboard(year, month)
+  try {
+    return await loadDashboard(year, month)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Nie udało się policzyć dashboardu.'
+    console.error('[dashboard]', message)
+    throw createError({ statusCode: 500, statusMessage: message })
+  }
 })
