@@ -49,8 +49,6 @@ export type DashboardReport = {
   openTotal: number
 }
 
-const SOURCE_CATEGORY_RE = /Kategoria [^\n:]*:\s*([^.|\n]+)/i
-
 function fallbackCategoryLabel(raw: string): string {
   if (raw === 'unset' || raw === 'Bez kategorii') return 'Bez kategorii'
   if (raw in CATEGORY_LABELS) return CATEGORY_LABELS[raw as Category]
@@ -86,13 +84,6 @@ function withShares<T extends { count: number }>(
     ...row,
     share: total > 0 ? row.count / total : 0
   }))
-}
-
-function extractSourceCategory(body: string | null | undefined): string | null {
-  if (!body) return null
-  const match = body.match(SOURCE_CATEGORY_RE)
-  const value = match?.[1]?.trim()
-  return value || null
 }
 
 function tagsFromTicket(sourceCategory: string | null, mappedCategory: string | null): string[] {
@@ -137,13 +128,17 @@ function warsawParts(date: Date): { year: number, month: number } {
 export async function loadDashboard(year: number, month: number): Promise<DashboardReport> {
   const trendStart = shiftMonth(year, month, -5)
 
-  const [ticketRows, channelRows, agentRows, sourceEventRows] = await Promise.all([
+  const [ticketRows, channelRows, agentRows] = await Promise.all([
     neonQuery<{
       id: string
       category: string | null
+      source_category: string | null
       created_at: Date
     }>(
-      `select t.id::text as id, t.category, t.created_at
+      `select t.id::text as id,
+              t.category,
+              t.source_category,
+              t.created_at
        from tickets t
        where (t.created_at at time zone 'Europe/Warsaw')
                >= make_timestamp($1, $2, 1, 0, 0, 0)
@@ -157,7 +152,7 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
        from tickets
        where extract(year from created_at at time zone 'Europe/Warsaw') = $1
          and extract(month from created_at at time zone 'Europe/Warsaw') = $2
-       group by 1
+       group by origin_channel
        order by count(*) desc, origin_channel asc`,
       [year, month]
     ),
@@ -178,22 +173,8 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
        where t.status in ('open', 'waiting')
        group by a.id, a.display_name
        order by count(*) desc, agent asc`
-    ),
-    neonQuery<{ ticket_id: string, body: string }>(
-      `select distinct on (e.ticket_id)
-              e.ticket_id::text as ticket_id,
-              e.body
-       from ticket_events e
-       where e.body like '%Kategoria%'
-       order by e.ticket_id, e.created_at asc`
     )
   ])
-
-  const sourceByTicket = new Map<string, string>()
-  for (const row of sourceEventRows) {
-    const extracted = extractSourceCategory(row.body)
-    if (extracted) sourceByTicket.set(row.ticket_id, extracted)
-  }
 
   const monthTicketRows: Array<{ source_category: string | null, category: string | null }> = []
   const trendMap = new Map<string, {
@@ -214,7 +195,7 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
     const created = row.created_at instanceof Date ? row.created_at : new Date(row.created_at)
     const parts = warsawParts(created)
     const tagged = {
-      source_category: sourceByTicket.get(row.id) || null,
+      source_category: row.source_category,
       category: row.category
     }
     const bucket = trendMap.get(`${parts.year}-${parts.month}`)
