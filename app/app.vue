@@ -71,6 +71,14 @@ useSeoMeta({
               Tickety
             </UButton>
             <UButton
+              to="/dashboard"
+              :variant="route.path.startsWith('/dashboard') ? 'soft' : 'ghost'"
+              color="neutral"
+              size="sm"
+            >
+              Dashboard
+            </UButton>
+            <UButton
               to="/wyniki"
               :variant="route.path.startsWith('/wyniki') ? 'soft' : 'ghost'"
               color="neutral"

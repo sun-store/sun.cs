@@ -314,11 +314,11 @@ async function insertEvents(client, events) {
 async function insertTicket(client, ticket) {
   const { rows } = await client.query(
     `insert into tickets (
-       contact_id, origin_channel, status, category, priority, related_transaction_id,
+       contact_id, origin_channel, status, category, source_category, priority, related_transaction_id,
        owner_id, subject, created_at, first_contact_at, first_agent_reply_at, closed_at,
        business_changed_at, hubspot_ticket_id, hubspot_thread_id
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
      )
      returning id`,
     [
@@ -326,6 +326,7 @@ async function insertTicket(client, ticket) {
       ticket.channel,
       ticket.status,
       ticket.category,
+      ticket.sourceCategory,
       ticket.priority,
       ticket.relatedTransactionId,
       ticket.ownerId,
@@ -437,6 +438,7 @@ async function main() {
         channel: mapChannel(row.source_type),
         status: isClosed ? 'closed' : 'open',
         category: isClosed || row.category ? mapCategory(row.category) : null,
+        sourceCategory: row.category ? String(row.category).trim() : null,
         priority: isClosed || row.priority ? mapPriority(row.priority) : null,
         relatedTransactionId: extractTransactionId(row.subject),
         ownerId: row.owner_id ? agentCache.get(String(row.owner_id)) || null : null,
@@ -524,6 +526,7 @@ async function main() {
           channel: 'chat',
           status,
           category: closed ? 'other' : null,
+          sourceCategory: null,
           priority: closed ? 'medium' : null,
           relatedTransactionId: extractTransactionId(blob, subject),
           ownerId,
