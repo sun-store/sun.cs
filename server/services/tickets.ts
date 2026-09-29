@@ -229,12 +229,17 @@ export async function createTicket(input: {
     ]
   )
 
+  const ticket = created[0]
+  if (!ticket) {
+    throw new Error('Nie udało się utworzyć sprawy.')
+  }
+
   await neonQuery(
     `insert into ticket_events (
        ticket_id, channel, direction, sender_type, body, subject, call_status, external_thread_id, created_at
      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
     [
-      created[0].id,
+      ticket.id,
       input.channel,
       direction,
       senderType,
@@ -246,7 +251,7 @@ export async function createTicket(input: {
     ]
   )
 
-  return getTicket(created[0].id)
+  return getTicket(ticket.id)
 }
 
 export async function addEvent(ticketId: string, input: {

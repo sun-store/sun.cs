@@ -39,7 +39,7 @@ function loadEnvFile(name) {
       let value = trimmed.slice(eq + 1).trim()
       if (
         (value.startsWith('"') && value.endsWith('"'))
-        || (value.startsWith("'") && value.endsWith("'"))
+        || (value.startsWith('\'') && value.endsWith('\''))
       ) {
         value = value.slice(1, -1)
       }
@@ -98,13 +98,13 @@ function mapCategory(raw) {
   const table = {
     'dbss issue': 'delivery',
     'logistics issue': 'delivery',
-    claim: 'delivery',
+    'claim': 'delivery',
     'sun.finance': 'payment',
     'no vat': 'payment',
     'lost on platform': 'account',
     'offer request': 'product',
-    spam: 'other',
-    other: 'other',
+    'spam': 'other',
+    'other': 'other',
     'unresponsive seller': 'other'
   }
   for (const part of parts) {
@@ -314,11 +314,11 @@ async function insertEvents(client, events) {
 async function insertTicket(client, ticket) {
   const { rows } = await client.query(
     `insert into tickets (
-       contact_id, origin_channel, status, category, priority, related_transaction_id,
+       contact_id, origin_channel, status, category, source_category, priority, related_transaction_id,
        owner_id, subject, created_at, first_contact_at, first_agent_reply_at, closed_at,
        business_changed_at, hubspot_ticket_id, hubspot_thread_id
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
      )
      returning id`,
     [
@@ -326,6 +326,7 @@ async function insertTicket(client, ticket) {
       ticket.channel,
       ticket.status,
       ticket.category,
+      ticket.sourceCategory,
       ticket.priority,
       ticket.relatedTransactionId,
       ticket.ownerId,
@@ -343,9 +344,9 @@ async function insertTicket(client, ticket) {
 }
 
 async function main() {
-  const connectionString = strip(process.env.NEON_DIRECT_URL || process.env.NEON_DATABASE_URL || '')
+  const connectionString = strip(process.env.NEON_DATABASE_URL || process.env.NEON_DIRECT_URL || '')
   if (!connectionString) {
-    console.error('Brak NEON_DIRECT_URL / NEON_DATABASE_URL.')
+    console.error('Brak NEON_DATABASE_URL / NEON_DIRECT_URL.')
     process.exit(1)
   }
 
@@ -375,9 +376,16 @@ async function main() {
 
   const client = new pg.Client({
     connectionString,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    connectionTimeoutMillis: 60_000,
     ssl: /neon\.tech/i.test(connectionString) ? { rejectUnauthorized: false } : undefined
   })
+  client.on('error', (err) => {
+    console.error('pg client error:', err.message)
+  })
   await client.connect()
+  await client.query('select 1')
 
   const stats = {
     ticketsInserted: 0,
@@ -430,6 +438,7 @@ async function main() {
         channel: mapChannel(row.source_type),
         status: isClosed ? 'closed' : 'open',
         category: isClosed || row.category ? mapCategory(row.category) : null,
+        sourceCategory: row.category ? String(row.category).trim() : null,
         priority: isClosed || row.priority ? mapPriority(row.priority) : null,
         relatedTransactionId: extractTransactionId(row.subject),
         ownerId: row.owner_id ? agentCache.get(String(row.owner_id)) || null : null,
@@ -517,6 +526,7 @@ async function main() {
           channel: 'chat',
           status,
           category: closed ? 'other' : null,
+          sourceCategory: null,
           priority: closed ? 'medium' : null,
           relatedTransactionId: extractTransactionId(blob, subject),
           ownerId,

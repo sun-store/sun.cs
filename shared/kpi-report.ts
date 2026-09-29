@@ -85,7 +85,7 @@ const TXN_RE = /(?:sun\.store\/(?:[a-z]{2}\/)?transaction\/|transaction\s*#\s*)(
 export function extractTxnId(subject: string | null | undefined): string | null {
   if (!subject) return null
   const match = String(subject).match(TXN_RE)
-  return match ? match[1] : null
+  return match ? (match[1] ?? null) : null
 }
 
 export function isExcludedAgent(owner: string | null): boolean {
@@ -282,9 +282,9 @@ export function buildKpiReport(input: {
       bonusPoints(qaR, KPI_TARGETS.qa)
     ]
     const bonus = parts.every(part => part != null)
-      ? Math.round(parts.reduce((sum, part) => sum + (part || 0), 0) * 10) / 10
+      ? Math.round(parts.reduce<number>((sum, part) => sum + (part || 0), 0) * 10) / 10
       : parts.filter(part => part != null).length
-        ? Math.round(parts.reduce((sum, part) => sum + (part || 0), 0) * 10) / 10
+        ? Math.round(parts.reduce<number>((sum, part) => sum + (part || 0), 0) * 10) / 10
         : null
     return {
       agent,

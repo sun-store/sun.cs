@@ -24,7 +24,8 @@ export function parseAllowlist(raw: string): AllowlistEntry[] {
     .map(part => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const [email, roleRaw] = part.split(':').map(piece => piece.trim())
+      const [emailPart, roleRaw] = part.split(':').map(piece => piece.trim())
+      const email = emailPart ?? ''
       const role = (roleRaw || 'lead') as AppRole
       return {
         email: email.toLowerCase(),

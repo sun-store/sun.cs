@@ -70,6 +70,38 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   other: 'Inne'
 }
 
+/** Oryginalne wartości HubSpot `hs_ticket_category` (Ticket category). */
+export const HUBSPOT_TICKET_CATEGORIES = [
+  'DBSS Issue',
+  'Logistics Issue',
+  'Claim',
+  'sun.finance',
+  'No VAT',
+  'Lost on platform',
+  'Offer request',
+  'Unresponsive seller',
+  'Spam',
+  'Other'
+] as const
+export type HubspotTicketCategory = typeof HUBSPOT_TICKET_CATEGORIES[number]
+
+const HUBSPOT_CATEGORY_BY_KEY = new Map(
+  HUBSPOT_TICKET_CATEGORIES.map(label => [label.toLowerCase(), label] as const)
+)
+
+/** Normalizuje tag HubSpot do kanonicznej nazwy; nieznane zostawia jak przyszły. */
+export function normalizeHubspotCategory(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return 'Bez kategorii'
+  return HUBSPOT_CATEGORY_BY_KEY.get(trimmed.toLowerCase()) || trimmed
+}
+
+export function splitHubspotCategories(raw: string | null | undefined): string[] {
+  if (!raw || !raw.trim()) return ['Bez kategorii']
+  const parts = raw.split(';').map(part => normalizeHubspotCategory(part)).filter(Boolean)
+  return parts.length ? [...new Set(parts)] : ['Bez kategorii']
+}
+
 export const HEADLINE_SLA_CHANNELS = ['chat', 'email'] as const
 export type HeadlineSlaChannel = typeof HEADLINE_SLA_CHANNELS[number]
 

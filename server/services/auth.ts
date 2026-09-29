@@ -16,7 +16,7 @@ function microsoftSocialProvider() {
       tenantId: String(process.env.MICROSOFT_TENANT_ID || 'organizations').trim() || 'organizations',
       prompt: 'select_account' as const,
       disableSignUp: false,
-      mapProfileToUser: () => ({ image: null as string | null })
+      mapProfileToUser: () => ({ image: undefined as string | undefined })
     }
   }
 }
@@ -36,7 +36,7 @@ function googleSocialProvider() {
       clientSecret: String(process.env.GOOGLE_CLIENT_SECRET || '').trim(),
       prompt: 'select_account' as const,
       disableSignUp: false,
-      mapProfileToUser: () => ({ image: null as string | null })
+      mapProfileToUser: () => ({ image: undefined as string | undefined })
     }
   }
 }

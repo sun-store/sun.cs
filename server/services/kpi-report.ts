@@ -98,7 +98,7 @@ function loadDeals(): PaidDeal[] {
 function parseCsv(text: string): Record<string, string>[] {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
   if (!lines.length) return []
-  const headers = splitCsvLine(lines[0]).map(header => header.replace(/^"|"$/g, ''))
+  const headers = splitCsvLine(lines[0] ?? '').map(header => header.replace(/^"|"$/g, ''))
   return lines.slice(1).map((line) => {
     const cells = splitCsvLine(line)
     const row: Record<string, string> = {}
@@ -142,7 +142,7 @@ function loadCsat(): { rows: CsatRow[], through: string } {
   for (const name of files.sort()) {
     const survey: CsatRow['survey'] = /chat/i.test(name) ? 'chat' : 'email_phone'
     const dateMatch = name.match(/(\d{4}-\d{2}-\d{2})/)
-    if (dateMatch && dateMatch[1] > through) through = dateMatch[1]
+    if (dateMatch?.[1] && dateMatch[1] > through) through = dateMatch[1]
     const parsed = parseCsv(readFileSync(resolve(DOWNLOADS, name), 'utf8'))
     for (const row of parsed) {
       const recordId = row['Record ID']

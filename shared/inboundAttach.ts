@@ -7,7 +7,7 @@ export function shouldAttachToTicket(input: {
   }
   const unique = [...new Set(input.openTicketIds.filter(Boolean))]
   if (unique.length === 1) {
-    return { ticketId: unique[0], reason: 'single_open' }
+    return { ticketId: unique[0] ?? null, reason: 'single_open' }
   }
   return { ticketId: null, reason: 'new' }
 }

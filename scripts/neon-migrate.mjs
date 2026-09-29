@@ -20,7 +20,7 @@ function loadEnvFile(name) {
       let value = trimmed.slice(eq + 1).trim()
       if (
         (value.startsWith('"') && value.endsWith('"'))
-        || (value.startsWith("'") && value.endsWith("'"))
+        || (value.startsWith('\'') && value.endsWith('\''))
       ) {
         value = value.slice(1, -1)
       }

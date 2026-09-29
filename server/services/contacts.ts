@@ -68,7 +68,7 @@ export async function resolveContact(input: {
        values ($1, $2, $3, $4, $5)
        returning id, display_name, customer_role, sunstore_user_id, hubspot_contact_id`,
       [
-        input.displayName?.trim() || ordered[0].value,
+        input.displayName?.trim() || ordered[0]?.value || '',
         input.customerRole ?? null,
         input.sunstoreUserId ?? null,
         input.hubspotContactId ?? null,
@@ -76,6 +76,9 @@ export async function resolveContact(input: {
       ]
     )
     const contact = created[0]
+    if (!contact) {
+      throw new Error('Nie udało się utworzyć kontaktu.')
+    }
     await attachIdentifiers(contact.id, ordered, input.source, now)
     await recordConflicts(contact.id, conflictIds)
     return { contact, created: true, conflictIds }
@@ -86,6 +89,9 @@ export async function resolveContact(input: {
     [contactId]
   )
   const contact = existing[0]
+  if (!contact) {
+    throw new Error('Nie znaleziono kontaktu.')
+  }
   await neonQuery(
     `update contacts
      set display_name = coalesce(nullif($2, ''), display_name),
@@ -109,7 +115,11 @@ export async function resolveContact(input: {
     'select id, display_name, customer_role, sunstore_user_id, hubspot_contact_id from contacts where id = $1',
     [contact.id]
   )
-  return { contact: refreshed[0], created: false, conflictIds }
+  const updated = refreshed[0]
+  if (!updated) {
+    throw new Error('Nie udało się odświeżyć kontaktu.')
+  }
+  return { contact: updated, created: false, conflictIds }
 }
 
 export async function getContact(id: string) {
