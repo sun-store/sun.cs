@@ -20,6 +20,7 @@ export type InboundEvent = {
   sunstoreUserId?: string | null
   hubspotContactId?: string | null
   externalThreadId?: string | null
+  graphMessageId?: string | null
 }
 
 export async function ingestInbound(event: InboundEvent) {
@@ -49,6 +50,7 @@ export async function ingestInbound(event: InboundEvent) {
       body: event.body,
       callStatus: event.callStatus,
       externalThreadId: event.externalThreadId,
+      graphMessageId: event.graphMessageId,
       occurredAt: event.occurredAt ? new Date(event.occurredAt) : undefined
     })
   }
@@ -67,7 +69,8 @@ export async function ingestInbound(event: InboundEvent) {
     relatedTransactionId: event.relatedTransactionId,
     callStatus: event.callStatus,
     senderType: event.senderType,
-    externalThreadId: event.externalThreadId
+    externalThreadId: event.externalThreadId,
+    graphMessageId: event.graphMessageId
   })
 }
 

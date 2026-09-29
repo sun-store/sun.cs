@@ -24,6 +24,15 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2026-06-30',
 
+  nitro: {
+    vercel: {
+      config: {
+        // Żywy mail z Outlooka (docs/OUTLOOK-MAIL.md). Wymaga planu Pro i CRON_SECRET w projekcie.
+        crons: [{ path: '/api/cron/mail-sync', schedule: '*/2 * * * *' }]
+      }
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {

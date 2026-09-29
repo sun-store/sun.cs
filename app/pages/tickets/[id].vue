@@ -62,6 +62,7 @@ const closeForm = reactive({
   priority: 'medium' as typeof TICKET_PRIORITIES[number]
 })
 const replyError = ref('')
+const replyInfo = ref('')
 const closeError = ref('')
 const sending = ref(false)
 const closing = ref(false)
@@ -98,9 +99,10 @@ function slaText() {
 
 async function sendReply() {
   replyError.value = ''
+  replyInfo.value = ''
   sending.value = true
   try {
-    await $fetch(`/api/tickets/${route.params.id}/events`, {
+    const result = await $fetch<{ mailSent?: boolean }>(`/api/tickets/${route.params.id}/events`, {
       method: 'POST',
       body: {
         body: reply.body,
@@ -109,6 +111,12 @@ async function sendReply() {
         senderType: 'agent'
       }
     })
+    const isCustomerMail = reply.channel === 'email' && reply.direction === 'to_customer'
+    replyInfo.value = !isCustomerMail
+      ? ''
+      : (result.mailSent
+          ? 'Mail wysłany z Outlooka i zapisany w sprawie.'
+          : 'Zapisano w sprawie. Mail nie wyszedł: Outlook nie jest jeszcze podłączony.')
     reply.body = ''
     await refresh()
   } catch (err: unknown) {
@@ -220,6 +228,12 @@ async function closeTicket() {
               class="text-sm text-error"
             >
               {{ replyError }}
+            </p>
+            <p
+              v-if="replyInfo"
+              class="text-sm text-muted"
+            >
+              {{ replyInfo }}
             </p>
             <UButton
               type="submit"

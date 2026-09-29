@@ -167,6 +167,7 @@ export async function createTicket(input: {
   callStatus?: CallStatus | null
   senderType?: SenderType
   externalThreadId?: string | null
+  graphMessageId?: string | null
 }) {
   const displayName = boundedText(input.displayName, TEXT_LIMITS.name, 'Imię')
   if (!displayName) throw new Error('Wymagane: imię.')
@@ -179,7 +180,8 @@ export async function createTicket(input: {
   const sunstoreUserId = optionalText(input.sunstoreUserId, TEXT_LIMITS.externalId, 'Id sun.store')
   const hubspotContactId = optionalText(input.hubspotContactId, TEXT_LIMITS.externalId, 'Id HubSpot')
   const relatedTransactionId = optionalText(input.relatedTransactionId, TEXT_LIMITS.transactionId, 'Numer zlecenia')
-  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.externalId, 'Wątek')
+  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.threadId, 'Wątek')
+  const graphMessageId = optionalText(input.graphMessageId, TEXT_LIMITS.threadId, 'Id wiadomości')
   if (input.ownerId && !isUuid(input.ownerId)) {
     throw new Error('Nieznany właściciel.')
   }
@@ -236,8 +238,9 @@ export async function createTicket(input: {
 
   await neonQuery(
     `insert into ticket_events (
-       ticket_id, channel, direction, sender_type, body, subject, call_status, external_thread_id, created_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+       ticket_id, channel, direction, sender_type, body, subject, call_status, external_thread_id,
+       graph_message_id, created_at
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       ticket.id,
       input.channel,
@@ -247,6 +250,7 @@ export async function createTicket(input: {
       subject,
       input.callStatus || null,
       externalThreadId,
+      graphMessageId,
       firstContactAt
     ]
   )
@@ -261,11 +265,13 @@ export async function addEvent(ticketId: string, input: {
   body: string
   callStatus?: CallStatus | null
   externalThreadId?: string | null
+  graphMessageId?: string | null
   occurredAt?: Date
 }, actor?: TicketActor) {
   if (!isUuid(ticketId)) return null
   const body = boundedText(input.body, TEXT_LIMITS.body, 'Treść')
-  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.externalId, 'Wątek')
+  const externalThreadId = optionalText(input.externalThreadId, TEXT_LIMITS.threadId, 'Wątek')
+  const graphMessageId = optionalText(input.graphMessageId, TEXT_LIMITS.threadId, 'Id wiadomości')
   const params: unknown[] = [ticketId]
   const access = accessSql(actor, params)
   const tickets = await neonQuery<{
@@ -282,9 +288,10 @@ export async function addEvent(ticketId: string, input: {
 
   const now = input.occurredAt || new Date()
   await neonQuery(
-    `insert into ticket_events (ticket_id, channel, direction, sender_type, body, call_status, external_thread_id, created_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [ticketId, input.channel, input.direction, input.senderType, body, input.callStatus || null, externalThreadId, now]
+    `insert into ticket_events (
+       ticket_id, channel, direction, sender_type, body, call_status, external_thread_id, graph_message_id, created_at
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [ticketId, input.channel, input.direction, input.senderType, body, input.callStatus || null, externalThreadId, graphMessageId, now]
   )
 
   let firstReply = tickets[0].first_agent_reply_at

@@ -7,6 +7,8 @@ export const TEXT_LIMITS = {
   email: 320,
   phone: 40,
   externalId: 120,
+  /** Id wątku i wiadomości z Outlooka (Graph) bywają dłuższe niż 120 znaków. */
+  threadId: 512,
   transactionId: 80
 } as const
 

@@ -8,7 +8,7 @@ Ticketownia Customer Support. Neon (właściciel połączenia, RLS nie działa).
 
 ## Bezpieczeństwo
 
-Każdy handler w `server/api/**` zaczyna się od `requireUser` albo `requireAdmin` (`server/utils/session.ts`). Wyjątek: `server/api/auth/[...all].ts`.
+Każdy handler w `server/api/**` zaczyna się od `requireUser` albo `requireAdmin` (`server/utils/session.ts`). Wyjątki: `server/api/auth/[...all].ts` oraz `server/api/cron/**`, które zaczynają się od `requireCron` (`server/utils/cron.ts`, sekret `CRON_SECRET`).
 
 Konto powstaje tylko dla firmowego maila, który jest na allowliście. Agenci nie wchodzą, dopóki `requireUser` ich nie wpuszcza.
 
@@ -21,7 +21,7 @@ Fragment dokłada `accessSql` w `server/services/tickets.ts`. Wywołania wewnęt
 
 Zapis: biała lista pól w handlerze, limity długości z `shared/text-bounds.ts`, enum z `shared/domain.ts`. Id sprawy i agenta: `isUuid` zanim trafi do SQL. Parametry `$1`, nigdy wklejony input w zapytanie. Po zapisie odczyt wiersza; brak wiersza to 404.
 
-Sekrety (`NEON_DATABASE_URL`, `BETTER_AUTH_SECRET`, client secret SSO) zostają w env serwera. W `runtimeConfig.public` tylko flagi, że przycisk SSO ma się pokazać.
+Sekrety (`NEON_DATABASE_URL`, `BETTER_AUTH_SECRET`, client secret SSO, `GRAPH_CLIENT_SECRET`, `CRON_SECRET`) zostają w env serwera. W `runtimeConfig.public` tylko flagi, że przycisk SSO ma się pokazać.
 
 Nie przenoś polityk RLS z sun.logistics. Tam szeroka polityka (`auth.uid() is not null`) wygrywa z węższą przez OR. Tu filtrem jest aplikacja.
 
