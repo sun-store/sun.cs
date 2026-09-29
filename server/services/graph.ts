@@ -2,7 +2,8 @@ import { replyCommentHtml } from '../../shared/graph-mail'
 
 /**
  * Microsoft Graph dla wspólnej skrzynki CS. Aplikacja Entra z uprawnieniami
- * application: Mail.Read + Mail.Send, zawężona do jednej skrzynki (docs/OUTLOOK-MAIL.md).
+ * Mail.Read (+ Mail.Send po przełączeniu z HubSpota) przez RBAC for Applications,
+ * zawężona do jednej skrzynki (docs/OUTLOOK-MAIL.md).
  * Sekrety tylko z env serwera; nie logujemy ani tokenu, ani treści odpowiedzi błędu.
  */
 

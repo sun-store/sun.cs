@@ -20,20 +20,25 @@ Skrzynka CS na Microsoft 365 trafia do Ticketów jako kanał E-mail. Odpowiedź 
 ### 1. Aplikacja w Microsoft Entra (admin M365)
 
 1. Entra admin center → App registrations → New registration, np. `sun.support mail`. Osobna aplikacja, nie ta od SSO.
-2. API permissions → Microsoft Graph → **Application permissions**: `Mail.Read` i `Mail.Send`. Potem **Grant admin consent**.
-   `Mail.ReadWrite` nie jest potrzebne: nie zmieniamy nic w skrzynce.
-3. Certificates & secrets → New client secret. Skopiuj wartość od razu.
-4. Zapisz: Directory (tenant) ID, Application (client) ID, secret.
+2. Certificates & secrets → New client secret. Skopiuj wartość od razu.
+3. Zapisz: Directory (tenant) ID, Application (client) ID, secret oraz Object ID z Enterprise applications (inny niż w App registrations).
+4. **Nie** dodawaj Mail.Read / Mail.Send w API permissions ani admin consent. Uprawnienie nadane w Entra obejmuje wszystkie skrzynki w firmie; zakres dajemy w Exchange (krok 2).
 
-### 2. Zawężenie do jednej skrzynki (ważne)
+### 2. Uprawnienia tylko do skrzynki CS (RBAC for Applications)
 
-Uprawnienia application bez zawężenia dają dostęp do **wszystkich** skrzynek w firmie. Admin Exchange ogranicza aplikację do skrzynki CS, np. przez RBAC for Applications w Exchange Online albo Application Access Policy:
+Microsoft zastąpił Application Access Policies mechanizmem [RBAC for Applications](https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac). Admin Exchange w PowerShell:
 
 ```powershell
-# Exchange Online PowerShell, grupa mail-enabled security z samą skrzynką CS
-New-ApplicationAccessPolicy -AppId <client-id> -PolicyScopeGroupId cs-mailbox-group@sun.store -AccessRight RestrictAccess -Description "sun.support tylko skrzynka CS"
-Test-ApplicationAccessPolicy -Identity <skrzynka-cs>@sun.store -AppId <client-id>
+Connect-ExchangeOnline
+New-ServicePrincipal -AppId <client-id> -ObjectId <enterprise-app-object-id> -DisplayName "sun.support mail"
+New-ManagementScope -Name "sun.support CS mailbox" -RecipientRestrictionFilter "PrimarySmtpAddress -eq '<skrzynka-cs>'"
+New-ManagementRoleAssignment -App <client-id> -Role "Application Mail.Read" -CustomResourceScope "sun.support CS mailbox"
+# w dniu przełączenia z HubSpota, żeby odpowiedzi wychodziły mailem:
+# New-ManagementRoleAssignment -App <client-id> -Role "Application Mail.Send" -CustomResourceScope "sun.support CS mailbox"
+Test-ServicePrincipalAuthorization -Identity <client-id> -Resource <skrzynka-cs>
 ```
+
+Na czas równoległego działania z HubSpotem: tylko `Application Mail.Read`. Bez Mail.Send sun.support nie wyśle klientowi drugiego maila; odpowiedź „Do klienta” kończy się błędem i nic się nie zapisuje.
 
 ### 3. Zmienne na Vercel (Production) i lokalnie w `.env`
 
@@ -41,7 +46,7 @@ Test-ApplicationAccessPolicy -Identity <skrzynka-cs>@sun.store -AppId <client-id
 |---|---|
 | `GRAPH_TENANT_ID` | Directory (tenant) ID |
 | `GRAPH_CLIENT_ID` | Application (client) ID |
-| `GRAPH_CLIENT_SECRET` | secret z kroku 1.3 |
+| `GRAPH_CLIENT_SECRET` | secret z kroku 1.2 |
 | `OUTLOOK_MAILBOX` | adres wspólnej skrzynki CS |
 | `CRON_SECRET` | losowy ciąg min. 32 znaki; Vercel dokleja go do wywołań crona |
 
