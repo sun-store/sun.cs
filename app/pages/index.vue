@@ -4,7 +4,7 @@ import {
   type AppRole,
   type TicketStatus
 } from '~~/shared/domain'
-import { seesAllTickets } from '~~/shared/access'
+import { canBrowseAllDepartments, defaultDepartmentFilter, seesAllTickets } from '~~/shared/access'
 import {
   DEPARTMENTS,
   DEPARTMENT_LABELS,
@@ -16,7 +16,6 @@ type QueueFilter = 'all' | 'mine' | 'unassigned'
 
 const status = ref<TicketStatus | 'all'>('open')
 const queue = ref<QueueFilter>('all')
-const department = ref<Department | 'all'>('all')
 const page = ref(1)
 
 type TicketsListResponse = {
@@ -44,7 +43,22 @@ type TicketsListResponse = {
   totalPages: number
 }
 
-const { data: me } = await useFetch<{ role?: string, agentId?: string | null }>('/api/me')
+const { data: me } = await useFetch<{
+  role?: AppRole
+  agentId?: string | null
+  department?: Department
+}>('/api/me')
+
+const department = ref<Department | 'all'>(
+  me.value?.role
+    ? defaultDepartmentFilter(me.value.role, me.value.department)
+    : 'all'
+)
+
+watch(me, (value) => {
+  if (!value?.role) return
+  department.value = defaultDepartmentFilter(value.role, value.department)
+}, { once: true })
 
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => ({
@@ -79,16 +93,26 @@ const queueItems = computed(() => {
     { label: 'Wszystkie kolejki', value: 'all' },
     { label: 'Moje', value: 'mine' }
   ]
-  if (me.value?.role && seesAllTickets(me.value.role as AppRole)) {
+  if (me.value?.role && seesAllTickets(me.value.role)) {
     items.push({ label: 'Nieprzypisane', value: 'unassigned' })
   }
   return items
 })
 
-const departmentItems = [
-  { label: 'Wszystkie działy', value: 'all' },
-  ...DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
-]
+const browseAllDepartments = computed(() =>
+  Boolean(me.value?.role && canBrowseAllDepartments(me.value.role, me.value.department))
+)
+
+const departmentItems = computed(() => {
+  if (browseAllDepartments.value) {
+    return [
+      { label: 'Wszystkie działy', value: 'all' as const },
+      ...DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
+    ]
+  }
+  const own = me.value?.department || 'cs'
+  return [{ label: DEPARTMENT_LABELS[own], value: own }]
+})
 
 function categoryText(ticket: TicketsListResponse['tickets'][number]) {
   if (ticket.categoryLabel && ticket.categoryLabel !== '—') return ticket.categoryLabel

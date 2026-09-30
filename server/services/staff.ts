@@ -1,38 +1,58 @@
 import type { AppRole } from '../../shared/domain'
-import { findAllowlistRole } from './allowlist'
+import type { Department } from '../../shared/departments'
+import { findAllowlistEntry } from './allowlist'
 import { neonQuery } from './neon-db'
 
 export async function ensureStaff(user: {
   id: string
   email: string
   name?: string | null
-}): Promise<{ role: AppRole, displayName: string, agentId: string | null } | null> {
+}): Promise<{
+  role: AppRole
+  displayName: string
+  agentId: string | null
+  department: Department
+} | null> {
   const email = user.email.trim().toLowerCase()
   const displayName = user.name?.trim() || email
-  const allowlisted = await findAllowlistRole(email)
+  const allowlisted = await findAllowlistEntry(email)
 
-  const existing = await neonQuery<{ role: AppRole, display_name: string, active: boolean }>(
-    'select role, display_name, active from staff where user_id = $1',
+  const existing = await neonQuery<{
+    role: AppRole
+    display_name: string
+    active: boolean
+    department: Department
+  }>(
+    'select role, display_name, active, department from staff where user_id = $1',
     [user.id]
   )
 
   if (!existing[0]) {
     if (!allowlisted) return null
     await neonQuery(
-      `insert into staff (user_id, role, display_name)
-       values ($1, $2, $3)
+      `insert into staff (user_id, role, display_name, department)
+       values ($1, $2, $3, $4)
        on conflict (user_id) do nothing`,
-      [user.id, allowlisted, displayName]
+      [user.id, allowlisted.role, displayName, allowlisted.department]
     )
-  } else if (allowlisted && existing[0].role !== allowlisted) {
+  } else if (allowlisted) {
     await neonQuery(
-      'update staff set role = $2, display_name = coalesce(nullif($3, \'\'), display_name) where user_id = $1',
-      [user.id, allowlisted, displayName]
+      `update staff
+       set role = $2,
+           display_name = coalesce(nullif($3, ''), display_name),
+           department = $4
+       where user_id = $1`,
+      [user.id, allowlisted.role, displayName, allowlisted.department]
     )
   }
 
-  const staff = await neonQuery<{ role: AppRole, display_name: string, active: boolean }>(
-    'select role, display_name, active from staff where user_id = $1',
+  const staff = await neonQuery<{
+    role: AppRole
+    display_name: string
+    active: boolean
+    department: Department
+  }>(
+    'select role, display_name, active, department from staff where user_id = $1',
     [user.id]
   )
   if (!staff[0]?.active) return null
@@ -41,7 +61,8 @@ export async function ensureStaff(user: {
   return {
     role: staff[0].role,
     displayName: staff[0].display_name || displayName,
-    agentId
+    agentId,
+    department: staff[0].department || 'cs'
   }
 }
 
