@@ -80,6 +80,7 @@ export const HUBSPOT_TICKET_CATEGORIES = [
   'Lost on platform',
   'Offer request',
   'Unresponsive seller',
+  'Stripe Payment Issue',
   'Spam',
   'Other'
 ] as const
@@ -89,11 +90,22 @@ const HUBSPOT_CATEGORY_BY_KEY = new Map(
   HUBSPOT_TICKET_CATEGORIES.map(label => [label.toLowerCase(), label] as const)
 )
 
+/** Częste warianty pisowni z importu / ręcznych wpisów. */
+const HUBSPOT_CATEGORY_ALIASES: Record<string, HubspotTicketCategory> = {
+  'unresponsive seller': 'Unresponsive seller',
+  'stripe payment issue': 'Stripe Payment Issue',
+  'stripe': 'Stripe Payment Issue',
+  'payment issue': 'Stripe Payment Issue'
+}
+
 /** Normalizuje tag HubSpot do kanonicznej nazwy; nieznane zostawia jak przyszły. */
 export function normalizeHubspotCategory(raw: string): string {
   const trimmed = raw.trim()
   if (!trimmed) return 'Bez kategorii'
-  return HUBSPOT_CATEGORY_BY_KEY.get(trimmed.toLowerCase()) || trimmed
+  const key = trimmed.toLowerCase()
+  return HUBSPOT_CATEGORY_BY_KEY.get(key)
+    || HUBSPOT_CATEGORY_ALIASES[key]
+    || trimmed
 }
 
 export function splitHubspotCategories(raw: string | null | undefined): string[] {

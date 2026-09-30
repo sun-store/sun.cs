@@ -91,7 +91,10 @@ const departmentItems = [
 ]
 
 function categoryText(ticket: TicketsListResponse['tickets'][number]) {
-  if (ticket.categoryLabel) return ticket.categoryLabel
+  if (ticket.categoryLabel && ticket.categoryLabel !== '—') return ticket.categoryLabel
+  if (typeof ticket.sourceCategory === 'string' && ticket.sourceCategory.trim()) {
+    return ticket.sourceCategory
+  }
   if (ticket.category && ticket.category in CATEGORY_LABELS) {
     return CATEGORY_LABELS[ticket.category as keyof typeof CATEGORY_LABELS]
   }

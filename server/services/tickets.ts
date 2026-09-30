@@ -11,7 +11,8 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   PRIORITY_LABELS,
-  STATUS_LABELS
+  STATUS_LABELS,
+  splitHubspotCategories
 } from '../../shared/domain'
 import { seesAllTickets } from '../../shared/access'
 import {
@@ -627,9 +628,15 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
   const department = (row.department && isDepartment(row.department))
     ? row.department
     : resolveDepartment(row.source_category, row.category)
-  const categoryLabel = row.category && row.category in CATEGORY_LABELS
-    ? CATEGORY_LABELS[row.category as typeof CATEGORIES[number]]
-    : (row.source_category || row.category || '—')
+  // Lista pokazuje tagi HubSpot (np. Unresponsive seller); wewnętrzna kategoria to fallback.
+  const hubspotTags = row.source_category?.trim()
+    ? splitHubspotCategories(row.source_category).filter(tag => tag !== 'Bez kategorii')
+    : []
+  const categoryLabel = hubspotTags.length
+    ? hubspotTags.join(' · ')
+    : (row.category && row.category in CATEGORY_LABELS
+        ? CATEGORY_LABELS[row.category as typeof CATEGORIES[number]]
+        : (row.category || '—'))
   return {
     id: row.id,
     contactId: row.contact_id,

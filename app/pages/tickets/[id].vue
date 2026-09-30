@@ -8,6 +8,11 @@ import {
   TICKET_PRIORITIES,
   type Channel
 } from '~~/shared/domain'
+import {
+  DEPARTMENTS,
+  DEPARTMENT_LABELS,
+  type Department
+} from '~~/shared/departments'
 
 const route = useRoute()
 
@@ -43,6 +48,10 @@ type TicketDetail = {
     status?: string | null
   }>
   category?: string | null
+  categoryLabel?: string | null
+  sourceCategory?: string | null
+  department?: Department | null
+  departmentLabel?: string | null
   priority?: string | null
   sla?: {
     eligible: boolean
@@ -80,6 +89,32 @@ const directionItems = [
 
 const categoryItems = CATEGORIES.map(value => ({ label: CATEGORY_LABELS[value], value }))
 const priorityItems = TICKET_PRIORITIES.map(value => ({ label: PRIORITY_LABELS[value], value }))
+const departmentItems = DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
+
+const migrateDepartment = ref<Department>('cs')
+watch(() => data.value?.department, (value) => {
+  if (value) migrateDepartment.value = value
+}, { immediate: true })
+
+const migrating = ref(false)
+const migrateError = ref('')
+
+async function saveDepartment() {
+  migrateError.value = ''
+  migrating.value = true
+  try {
+    await $fetch(`/api/tickets/${route.params.id}`, {
+      method: 'PATCH',
+      body: { department: migrateDepartment.value }
+    })
+    await refresh()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    migrateError.value = fetchErr.data?.statusMessage || 'Nie udało się przenieść sprawy.'
+  } finally {
+    migrating.value = false
+  }
+}
 
 function eventLabel(event: { senderType: string, direction: string, channel: string }) {
   if (event.senderType === 'system') return 'Zmiana w sprawie'
@@ -204,6 +239,8 @@ async function clearOwner() {
         </h1>
         <p class="mt-1 text-sm text-muted">
           {{ CHANNEL_LABELS[data.channel as Channel] }}
+          · {{ data.departmentLabel || '—' }}
+          · {{ data.categoryLabel || data.sourceCategory || data.category || '—' }}
           · {{ slaText() }}
           <span v-if="data.subject"> · {{ data.subject }}</span>
         </p>
@@ -329,6 +366,37 @@ async function clearOwner() {
               </p>
             </li>
           </ul>
+        </UCard>
+
+        <UCard v-if="data.status !== 'closed'">
+          <template #header>
+            Dział
+          </template>
+          <p class="mb-3 text-sm text-muted">
+            Przenieś sprawę do kolejki innego zespołu. Support widzi wszystkie; dział docelowy dostaje ją w swoim filtrze.
+          </p>
+          <div class="space-y-3">
+            <USelect
+              v-model="migrateDepartment"
+              :items="departmentItems"
+              value-key="value"
+            />
+            <p
+              v-if="migrateError"
+              class="text-sm text-error"
+            >
+              {{ migrateError }}
+            </p>
+            <UButton
+              color="neutral"
+              variant="outline"
+              :loading="migrating"
+              :disabled="migrateDepartment === data.department"
+              @click="saveDepartment"
+            >
+              Przenieś do działu
+            </UButton>
+          </div>
         </UCard>
 
         <UCard v-if="data.status !== 'closed' && data.ownerId">

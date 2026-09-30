@@ -41,6 +41,7 @@ const HUBSPOT_DEPARTMENT: Record<HubspotTicketCategory, Department> = {
   'Lost on platform': 'product',
   'Offer request': 'product',
   'Unresponsive seller': 'merchant_success',
+  'Stripe Payment Issue': 'finance',
   'Spam': 'cs',
   'Other': 'cs'
 }
