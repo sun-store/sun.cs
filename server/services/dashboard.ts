@@ -2,7 +2,8 @@ import {
   CHANNEL_LABELS,
   type Channel
 } from '../../shared/domain'
-import { ticketTopic, TOPIC_LABELS } from '../../shared/ticket-topic'
+import { needsTopicText, ticketTopic, TOPIC_LABELS } from '../../shared/ticket-topic'
+import { loadFirstCustomerTexts } from './first-customer-text'
 import { neonQuery } from './neon-db'
 
 export type DashboardCategoryRow = {
@@ -26,15 +27,6 @@ export type DashboardTrendMonth = {
   categories: Array<{ category: string, label: string, count: number }>
 }
 
-export type DashboardAgentLoadRow = {
-  agentId: string | null
-  agent: string
-  openCount: number
-  waitingCount: number
-  avgAgeHours: number | null
-  avgAgeLabel: string
-}
-
 export type DashboardReport = {
   year: number
   month: number
@@ -42,21 +34,12 @@ export type DashboardReport = {
   byCategory: DashboardCategoryRow[]
   byChannel: DashboardChannelRow[]
   trend: DashboardTrendMonth[]
-  openByAgent: DashboardAgentLoadRow[]
   openTotal: number
 }
 
 function channelLabel(raw: string): string {
   if (raw in CHANNEL_LABELS) return CHANNEL_LABELS[raw as Channel]
   return raw
-}
-
-function formatAgeHours(hours: number | null): string {
-  if (hours == null || Number.isNaN(hours)) return '—'
-  if (hours < 24) return `${hours.toFixed(1)} h`
-  const days = hours / 24
-  if (days < 14) return `${days.toFixed(1)} d`
-  return `${(days / 7).toFixed(1)} tyg.`
 }
 
 function shiftMonth(year: number, month: number, delta: number): { year: number, month: number } {
@@ -113,20 +96,16 @@ function warsawParts(date: Date): { year: number, month: number } {
 export async function loadDashboard(year: number, month: number): Promise<DashboardReport> {
   const trendStart = shiftMonth(year, month, -5)
 
-  const [ticketRows, channelRows, agentRows] = await Promise.all([
+  const [ticketRows, channelRows, openRows] = await Promise.all([
     neonQuery<{
       id: string
       source_category: string | null
       subject: string | null
-      first_customer_text: string | null
       created_at: Date
     }>(
       `select t.id::text as id,
               t.source_category,
               t.subject,
-              (select left(e.body, 600) from ticket_events e
-                where e.ticket_id = t.id and e.sender_type = 'customer'
-                order by e.created_at asc limit 1) as first_customer_text,
               t.created_at
        from tickets t
        where (t.created_at at time zone 'Europe/Warsaw')
@@ -145,25 +124,17 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
        order by count(*) desc, origin_channel asc`,
       [year, month]
     ),
-    neonQuery<{
-      agent_id: string | null
-      agent: string
-      open_count: string
-      waiting_count: string
-      avg_age_hours: string | null
-    }>(
-      `select a.id::text as agent_id,
-              coalesce(a.display_name, 'Bez właściciela') as agent,
-              count(*) filter (where t.status = 'open')::text as open_count,
-              count(*) filter (where t.status = 'waiting')::text as waiting_count,
-              avg(extract(epoch from (now() - t.created_at)) / 3600.0)::text as avg_age_hours
-       from tickets t
-       left join agents a on a.id = t.owner_id
-       where t.status in ('open', 'waiting')
-       group by a.id, a.display_name
-       order by count(*) desc, agent asc`
+    neonQuery<{ open_total: string }>(
+      `select count(*)::text as open_total
+       from tickets
+       where status in ('open', 'waiting')`
     )
   ])
+
+  const needBodyIds = ticketRows
+    .filter(row => needsTopicText(row.source_category))
+    .map(row => row.id)
+  const bodies = await loadFirstCustomerTexts(needBodyIds)
 
   const monthTicketRows: TopicSource[] = []
   const trendMap = new Map<string, {
@@ -186,7 +157,7 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
     const tagged: TopicSource = {
       source_category: row.source_category,
       subject: row.subject,
-      first_customer_text: row.first_customer_text
+      first_customer_text: bodies.get(row.id) ?? null
     }
     const bucket = trendMap.get(`${parts.year}-${parts.month}`)
     if (bucket) bucket.rows.push(tagged)
@@ -215,24 +186,6 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
     }
   })
 
-  const openByAgent = agentRows.map((row) => {
-    const openCount = Number(row.open_count)
-    const waitingCount = Number(row.waiting_count)
-    const avgAgeHours = row.avg_age_hours == null
-      ? null
-      : Number(row.avg_age_hours)
-    return {
-      agentId: row.agent_id,
-      agent: row.agent,
-      openCount,
-      waitingCount,
-      avgAgeHours: avgAgeHours == null || Number.isNaN(avgAgeHours) ? null : avgAgeHours,
-      avgAgeLabel: formatAgeHours(
-        avgAgeHours == null || Number.isNaN(avgAgeHours) ? null : avgAgeHours
-      )
-    }
-  })
-
   return {
     year,
     month,
@@ -240,7 +193,6 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
     byCategory: withShares(monthCategories, monthTotal),
     byChannel: withShares(monthChannels, channelTotal),
     trend,
-    openByAgent,
-    openTotal: openByAgent.reduce((sum, row) => sum + row.openCount + row.waitingCount, 0)
+    openTotal: Number(openRows[0]?.open_total || 0)
   }
 }

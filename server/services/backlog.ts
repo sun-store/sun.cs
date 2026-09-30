@@ -2,6 +2,8 @@ import { resolveTicketAccess } from '../../shared/access'
 import type { AppRole } from '../../shared/domain'
 import { buildBacklog, type BacklogTicket } from '../../shared/backlog'
 import { isDepartment, resolveDepartment, type Department } from '../../shared/departments'
+import { needsTopicText } from '../../shared/ticket-topic'
+import { loadFirstCustomerTexts } from './first-customer-text'
 import { neonQuery } from './neon-db'
 
 type BacklogRow = {
@@ -15,7 +17,6 @@ type BacklogRow = {
   reply_due_at: Date | null
   first_contact_at: Date
   subject: string | null
-  first_customer_text: string | null
   related_transaction_id: string | null
   ai_next_step: string | null
 }
@@ -33,15 +34,19 @@ export async function loadBacklog(actor: { role: AppRole, department?: Departmen
   const rows = await neonQuery<BacklogRow>(
     `select t.id::text as id, t.department, t.source_category, t.category, t.owner_id::text as owner_id,
             a.display_name as owner_name, t.awaiting, t.reply_due_at, t.first_contact_at, t.subject,
-            t.related_transaction_id, t.ai_next_step,
-            (select left(e.body, 600) from ticket_events e
-              where e.ticket_id = t.id and e.sender_type = 'customer'
-              order by e.created_at asc limit 1) as first_customer_text
+            t.related_transaction_id,
+            t.ai_next_step
      from tickets t
      left join agents a on a.id = t.owner_id
      where t.status <> 'closed' ${accessClause}`,
     params
   )
+
+  const needBodyIds = rows
+    .filter(row => needsTopicText(row.source_category))
+    .map(row => row.id)
+  const bodies = await loadFirstCustomerTexts(needBodyIds)
+
   const tickets: BacklogTicket[] = rows.map(row => ({
     id: row.id,
     department: row.department && isDepartment(row.department)
@@ -54,7 +59,7 @@ export async function loadBacklog(actor: { role: AppRole, department?: Departmen
     firstContactAt: new Date(row.first_contact_at),
     sourceCategory: row.source_category,
     subject: row.subject,
-    firstCustomerText: row.first_customer_text,
+    firstCustomerText: bodies.get(row.id) ?? null,
     relatedTransactionId: row.related_transaction_id,
     aiNextStep: row.ai_next_step
   }))

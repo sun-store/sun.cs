@@ -1,5 +1,5 @@
-import { loadDashboard } from '../services/dashboard'
-import { requireUser } from '../utils/session'
+import { loadDashboard } from '../../services/dashboard'
+import { requireUser } from '../../utils/session'
 
 export default defineEventHandler(async (event) => {
   await requireUser(event)

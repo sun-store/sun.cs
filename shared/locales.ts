@@ -84,6 +84,7 @@ export type LocaleMessages = {
     product: string
   }
   translate: {
+    run: string
     showOriginal: string
     showTranslation: string
     translating: string
@@ -123,6 +124,8 @@ export type LocaleMessages = {
     trendTitle: string
     trendHint: string
     openCase: string
+    breakdown: string
+    loadMonth: string
   }
 }
 
@@ -205,6 +208,7 @@ export const pl: LocaleMessages = {
     product: 'Produkt'
   },
   translate: {
+    run: 'Przetłumacz',
     showOriginal: 'Pokaż oryginał',
     showTranslation: 'Pokaż tłumaczenie',
     translating: 'Tłumaczenie…',
@@ -217,7 +221,7 @@ export const pl: LocaleMessages = {
   },
   dashboard: {
     title: 'Dashboard',
-    subtitle: 'Gdzie teraz zalegają sprawy i co z nimi zrobić. Niżej: co wpływa w miesiącu.',
+    subtitle: 'Zaległości i co zrobić teraz. Statystyki miesiąca — na żądanie.',
     open: 'Otwarte',
     overdue: 'Po terminie SLA',
     dueSoon: 'SLA mija w ciągu 1 h',
@@ -243,7 +247,9 @@ export const pl: LocaleMessages = {
     channelsHint: 'Skąd przyszły sprawy w tym samym okresie.',
     trendTitle: 'Jak to się zmienia',
     trendHint: 'Ostatnie 6 miesięcy — łączna liczba spraw i najczęstszy temat.',
-    openCase: 'otwórz'
+    openCase: 'otwórz',
+    breakdown: 'Szczegóły zaległości',
+    loadMonth: 'Pokaż statystyki miesiąca'
   }
 }
 
@@ -326,6 +332,7 @@ export const en: LocaleMessages = {
     product: 'Product'
   },
   translate: {
+    run: 'Translate',
     showOriginal: 'Show original',
     showTranslation: 'Show translation',
     translating: 'Translating…',
@@ -338,7 +345,7 @@ export const en: LocaleMessages = {
   },
   dashboard: {
     title: 'Dashboard',
-    subtitle: 'Where cases are stuck now and what to do. Below: what arrived this month.',
+    subtitle: 'Where cases are stuck and what to do now. Monthly stats on demand.',
     open: 'Open',
     overdue: 'Past SLA',
     dueSoon: 'SLA due within 1 h',
@@ -364,7 +371,9 @@ export const en: LocaleMessages = {
     channelsHint: 'Where cases came from in the same period.',
     trendTitle: 'How it changes',
     trendHint: 'Last 6 months — total cases and top topic.',
-    openCase: 'open'
+    openCase: 'open',
+    breakdown: 'Backlog details',
+    loadMonth: 'Show monthly stats'
   }
 }
 

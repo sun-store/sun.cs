@@ -10,8 +10,13 @@ const MONTH_LABELS_EN = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ]
 
+const monthLabels = computed(() =>
+  locale.value === 'en' ? MONTH_LABELS_EN : MONTH_LABELS_PL
+)
+
 const year = ref(2026)
 const month = ref(9)
+const showMonthStats = ref(false)
 
 type DashboardResponse = {
   year: number
@@ -24,14 +29,6 @@ type DashboardResponse = {
     month: number
     total: number
     categories: Array<{ category: string, label: string, count: number }>
-  }>
-  openByAgent: Array<{
-    agentId: string | null
-    agent: string
-    openCount: number
-    waitingCount: number
-    avgAgeHours: number | null
-    avgAgeLabel: string
   }>
   openTotal: number
 }
@@ -66,10 +63,9 @@ type BacklogResponse = {
 
 const { data: backlog, error: backlogError, refresh: refreshBacklog } = await useFetch<BacklogResponse>('/api/dashboard/backlog')
 
-// Zaległości zmieniają się w ciągu dnia — odświeżamy co minutę (bez powiadomień).
 let backlogTimer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
-  backlogTimer = setInterval(() => refreshBacklog(), 60_000)
+  backlogTimer = setInterval(() => refreshBacklog(), 120_000)
 })
 onBeforeUnmount(() => {
   if (backlogTimer) clearInterval(backlogTimer)
@@ -93,21 +89,31 @@ function tileClass(tone: string) {
   return ''
 }
 
-const { data, pending, error, refresh } = await useFetch<DashboardResponse>('/api/dashboard', {
-  query: computed(() => ({ year: year.value, month: month.value }))
+const {
+  data,
+  pending,
+  error,
+  refresh
+} = await useFetch<DashboardResponse>('/api/dashboard', {
+  query: computed(() => ({ year: year.value, month: month.value })),
+  immediate: false
 })
 
 watch([year, month], () => {
-  refresh()
+  if (showMonthStats.value) refresh()
 })
+
+async function loadMonthStats() {
+  showMonthStats.value = true
+  await refresh()
+}
 
 function pct(share: number) {
   return `${(share * 100).toFixed(1)}%`
 }
 
 function monthTitle(y: number, m: number) {
-  const labels = locale.value === 'en' ? MONTH_LABELS_EN : MONTH_LABELS_PL
-  return `${labels[m]} ${y}`
+  return `${monthLabels.value[m]} ${y}`
 }
 
 function barWidth(count: number, max: number) {
@@ -128,19 +134,33 @@ const trendMax = computed(() =>
 )
 
 const topCategory = computed(() => data.value?.byCategory[0] ?? null)
+
+async function takeUrgent() {
+  try {
+    const result = await $fetch<{ id: string } | null>('/api/tickets/next', {
+      method: 'POST',
+      body: { queue: 'now' }
+    })
+    if (result?.id) {
+      await navigateTo(`/?queue=now&case=${result.id}`)
+      return
+    }
+  } catch {
+    // fall through to queue
+  }
+  await navigateTo('/?queue=now')
+}
 </script>
 
 <template>
   <div class="py-8">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-medium tracking-tight">
-          {{ t('dashboard', 'title') }}
-        </h1>
-        <p class="mt-1 text-sm text-muted">
-          {{ t('dashboard', 'subtitle') }}
-        </p>
-      </div>
+    <div>
+      <h1 class="text-2xl font-medium tracking-tight">
+        {{ t('dashboard', 'title') }}
+      </h1>
+      <p class="mt-1 text-sm text-muted">
+        {{ t('dashboard', 'subtitle') }}
+      </p>
     </div>
 
     <p
@@ -149,9 +169,10 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
     >
       {{ backlogError.statusMessage || backlogError.message }}
     </p>
+
     <section
       v-else-if="backlog"
-      class="mt-6"
+      class="mt-6 space-y-4"
     >
       <div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <NuxtLink
@@ -173,7 +194,7 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
         </NuxtLink>
       </div>
 
-      <UCard class="mt-4">
+      <UCard>
         <h2 class="font-medium">
           {{ t('dashboard', 'actionsNow') }}
         </h2>
@@ -185,82 +206,78 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
             {{ action }}
           </li>
         </ol>
+        <div class="mt-4">
+          <UButton
+            color="primary"
+            @click="takeUrgent"
+          >
+            {{ t('inbox', 'takeNext') }}
+          </UButton>
+        </div>
       </UCard>
 
-      <UCard class="mt-4">
+      <UCard>
         <h2 class="font-medium">
-          {{ t('dashboard', 'deptSection') }}
+          {{ t('dashboard', 'oldestWaiting') }}
         </h2>
         <div class="mt-3 overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="text-muted">
               <tr>
                 <th class="pb-2 pr-4 font-medium">
-                  Dział
+                  Transakcja
+                </th>
+                <th class="pb-2 pr-4 font-medium">
+                  {{ t('dashboard', 'topics') }}
+                </th>
+                <th class="pb-2 pr-4 font-medium">
+                  {{ t('dashboard', 'dept') }}
                 </th>
                 <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Otwarte
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Do odpowiedzi
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Po terminie
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Nieprzypisane
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Czeka na klienta
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Najstarsza
+                  Od kiedy
                 </th>
                 <th class="pb-2 font-medium">
-                  Następny krok
+                  {{ t('dashboard', 'nextStep') }}
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="row in backlog.byDepartment"
-                :key="row.department"
+                v-for="row in backlog.oldest"
+                :key="row.id"
                 class="border-t border-default align-top"
               >
                 <td class="py-2 pr-4 font-medium whitespace-nowrap">
-                  {{ row.label }}
+                  <NuxtLink
+                    :to="`/?queue=reply&case=${row.id}`"
+                    class="underline-offset-2 hover:underline"
+                  >
+                    {{ row.transactionId ? row.transactionId.slice(0, 8) : t('dashboard', 'openCase') }}
+                  </NuxtLink>
                 </td>
                 <td class="py-2 pr-4">
-                  {{ row.open }}
-                </td>
-                <td class="py-2 pr-4">
-                  {{ row.toReply }}
-                </td>
-                <td
-                  class="py-2 pr-4"
-                  :class="row.overdue ? 'font-medium' : 'text-muted'"
-                >
-                  {{ row.overdue }}
-                </td>
-                <td class="py-2 pr-4">
-                  {{ row.unassigned }}
-                </td>
-                <td class="py-2 pr-4">
-                  {{ row.waitingCustomer }}
+                  {{ row.topicLabel }}
                 </td>
                 <td class="py-2 pr-4 whitespace-nowrap">
-                  {{ row.oldest }}
+                  {{ row.department }}
                 </td>
-                <td class="py-2 min-w-[20rem]">
+                <td class="py-2 pr-4 whitespace-nowrap">
+                  <span
+                    v-if="row.overdue"
+                    class="me-1 rounded bg-black px-1.5 py-0.5 text-xs text-white"
+                  >{{ t('dashboard', 'overdue') }}</span>
+                  {{ row.age }}
+                </td>
+                <td class="py-2 min-w-[16rem]">
                   {{ row.nextStep }}
                 </td>
               </tr>
-              <tr v-if="!backlog.byDepartment.length">
+              <tr v-if="!backlog.oldest.length">
                 <td
-                  colspan="8"
+                  colspan="5"
                   class="py-6 text-center text-muted"
                 >
-                  Brak otwartych spraw.
+                  {{ t('dashboard', 'nothingWaiting') }}
                 </td>
               </tr>
             </tbody>
@@ -268,35 +285,82 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
         </div>
       </UCard>
 
-      <div class="mt-4 grid gap-4 xl:grid-cols-3">
-        <UCard class="xl:col-span-2">
-          <h2 class="font-medium">
-            Tematy spraw
-          </h2>
-          <p class="mt-1 text-sm text-muted">
-            Temat z tagu HubSpot, a gdy go brak („Other”) — z tematu i treści wiadomości.
-          </p>
-          <div class="mt-3 overflow-x-auto">
+      <details class="rounded-lg border border-default p-4">
+        <summary class="cursor-pointer font-medium">
+          {{ t('dashboard', 'breakdown') }}
+        </summary>
+        <div class="mt-4 space-y-4">
+          <div class="overflow-x-auto">
+            <p class="mb-2 text-sm text-muted">
+              {{ t('dashboard', 'deptSection') }}
+            </p>
             <table class="w-full text-left text-sm">
               <thead class="text-muted">
                 <tr>
                   <th class="pb-2 pr-4 font-medium">
-                    Temat
+                    {{ t('dashboard', 'dept') }}
                   </th>
                   <th class="pb-2 pr-4 font-medium">
-                    Otwarte
-                  </th>
-                  <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                    Po terminie
-                  </th>
-                  <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                    Nieprzyp.
+                    {{ t('dashboard', 'open') }}
                   </th>
                   <th class="pb-2 pr-4 font-medium">
-                    Działy
+                    {{ t('dashboard', 'overdue') }}
+                  </th>
+                  <th class="pb-2 pr-4 font-medium">
+                    {{ t('dashboard', 'unassigned') }}
                   </th>
                   <th class="pb-2 font-medium">
-                    Następny krok
+                    {{ t('dashboard', 'nextStep') }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in backlog.byDepartment"
+                  :key="row.department"
+                  class="border-t border-default align-top"
+                >
+                  <td class="py-2 pr-4 font-medium whitespace-nowrap">
+                    {{ row.label }}
+                  </td>
+                  <td class="py-2 pr-4">
+                    {{ row.open }}
+                  </td>
+                  <td
+                    class="py-2 pr-4"
+                    :class="row.overdue ? 'font-medium' : 'text-muted'"
+                  >
+                    {{ row.overdue }}
+                  </td>
+                  <td class="py-2 pr-4">
+                    {{ row.unassigned }}
+                  </td>
+                  <td class="py-2 min-w-[16rem]">
+                    {{ row.nextStep }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="overflow-x-auto">
+            <p class="mb-2 text-sm text-muted">
+              {{ t('dashboard', 'topicSection') }}
+            </p>
+            <table class="w-full text-left text-sm">
+              <thead class="text-muted">
+                <tr>
+                  <th class="pb-2 pr-4 font-medium">
+                    {{ t('dashboard', 'topics') }}
+                  </th>
+                  <th class="pb-2 pr-4 font-medium">
+                    {{ t('dashboard', 'open') }}
+                  </th>
+                  <th class="pb-2 pr-4 font-medium">
+                    {{ t('dashboard', 'overdue') }}
+                  </th>
+                  <th class="pb-2 font-medium">
+                    {{ t('dashboard', 'nextStep') }}
                   </th>
                 </tr>
               </thead>
@@ -318,12 +382,6 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
                   >
                     {{ row.overdue }}
                   </td>
-                  <td class="py-2 pr-4">
-                    {{ row.unassigned }}
-                  </td>
-                  <td class="py-2 pr-4 text-muted">
-                    {{ row.departments }}
-                  </td>
                   <td class="py-2 min-w-[16rem]">
                     {{ row.nextStep }}
                   </td>
@@ -331,328 +389,245 @@ const topCategory = computed(() => data.value?.byCategory[0] ?? null)
               </tbody>
             </table>
           </div>
-        </UCard>
 
-        <div class="space-y-4">
-          <UCard>
-            <h2 class="font-medium">
-              Nieprzypisane — jakie to sprawy
-            </h2>
-            <ul class="mt-3 space-y-2 text-sm">
-              <li
-                v-for="row in backlog.unassignedByTopic"
-                :key="row.topic"
-                class="flex items-baseline justify-between gap-3"
-              >
-                <span>{{ row.label }}</span>
-                <span class="font-medium">{{ row.count }}</span>
-              </li>
-              <li
-                v-if="!backlog.unassignedByTopic.length"
-                class="text-muted"
-              >
-                Wszystkie sprawy mają osobę prowadzącą.
-              </li>
-            </ul>
-          </UCard>
-
-          <UCard>
-            <h2 class="font-medium">
-              Na osobach
-            </h2>
-            <table class="mt-3 w-full text-left text-sm">
-              <thead class="text-muted">
-                <tr>
-                  <th class="pb-2 pr-3 font-medium">
-                    Prowadzi
-                  </th>
-                  <th class="pb-2 pr-3 font-medium">
-                    Otwarte
-                  </th>
-                  <th class="pb-2 font-medium whitespace-nowrap">
-                    Po terminie
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in backlog.byOwner"
-                  :key="row.ownerId || 'none'"
-                  class="border-t border-default"
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <p class="mb-2 text-sm text-muted">
+                {{ t('dashboard', 'unassigned') }}
+              </p>
+              <ul class="space-y-2 text-sm">
+                <li
+                  v-for="row in backlog.unassignedByTopic"
+                  :key="row.topic"
+                  class="flex items-baseline justify-between gap-3"
                 >
-                  <td
-                    class="py-1.5 pr-3"
-                    :class="row.ownerId ? '' : 'text-muted'"
+                  <span>{{ row.label }}</span>
+                  <span class="font-medium">{{ row.count }}</span>
+                </li>
+                <li
+                  v-if="!backlog.unassignedByTopic.length"
+                  class="text-muted"
+                >
+                  {{ t('dashboard', 'allOwned') }}
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p class="mb-2 text-sm text-muted">
+                Na osobach
+              </p>
+              <table class="w-full text-left text-sm">
+                <thead class="text-muted">
+                  <tr>
+                    <th class="pb-2 pr-3 font-medium">
+                      Prowadzi
+                    </th>
+                    <th class="pb-2 pr-3 font-medium">
+                      {{ t('dashboard', 'open') }}
+                    </th>
+                    <th class="pb-2 font-medium">
+                      {{ t('dashboard', 'overdue') }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in backlog.byOwner"
+                    :key="row.ownerId || 'none'"
+                    class="border-t border-default"
                   >
-                    {{ row.owner }}
-                  </td>
-                  <td class="py-1.5 pr-3">
-                    {{ row.open }}
-                  </td>
-                  <td :class="row.overdue ? 'font-medium' : 'text-muted'">
-                    {{ row.overdue }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </UCard>
+                    <td
+                      class="py-1.5 pr-3"
+                      :class="row.ownerId ? '' : 'text-muted'"
+                    >
+                      {{ row.owner }}
+                    </td>
+                    <td class="py-1.5 pr-3">
+                      {{ row.open }}
+                    </td>
+                    <td :class="row.overdue ? 'font-medium' : 'text-muted'">
+                      {{ row.overdue }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <UCard class="mt-4">
-        <h2 class="font-medium">
-          {{ t('dashboard', 'oldestWaiting') }}
-        </h2>
-        <div class="mt-3 overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead class="text-muted">
-              <tr>
-                <th class="pb-2 pr-4 font-medium">
-                  Transakcja
-                </th>
-                <th class="pb-2 pr-4 font-medium">
-                  Temat
-                </th>
-                <th class="pb-2 pr-4 font-medium">
-                  Dział
-                </th>
-                <th class="pb-2 pr-4 font-medium">
-                  Prowadzi
-                </th>
-                <th class="pb-2 pr-4 font-medium whitespace-nowrap">
-                  Od kiedy
-                </th>
-                <th class="pb-2 font-medium">
-                  Następny krok
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in backlog.oldest"
-                :key="row.id"
-                class="border-t border-default align-top"
-              >
-                <td class="py-2 pr-4 font-medium whitespace-nowrap">
-                  <NuxtLink
-                    :to="`/?queue=reply&case=${row.id}`"
-                    class="underline-offset-2 hover:underline"
-                  >
-                    {{ row.transactionId ? row.transactionId.slice(0, 8) : 'otwórz' }}
-                  </NuxtLink>
-                </td>
-                <td class="py-2 pr-4">
-                  {{ row.topicLabel }}
-                </td>
-                <td class="py-2 pr-4 whitespace-nowrap">
-                  {{ row.department }}
-                </td>
-                <td
-                  class="py-2 pr-4 whitespace-nowrap"
-                  :class="row.owner === 'nieprzypisana' ? 'text-muted' : ''"
-                >
-                  {{ row.owner }}
-                </td>
-                <td class="py-2 pr-4 whitespace-nowrap">
-                  <span
-                    v-if="row.overdue"
-                    class="me-1 rounded bg-black px-1.5 py-0.5 text-xs text-white"
-                  >po terminie</span>
-                  {{ row.age }}
-                </td>
-                <td class="py-2 min-w-[16rem]">
-                  {{ row.nextStep }}
-                </td>
-              </tr>
-              <tr v-if="!backlog.oldest.length">
-                <td
-                  colspan="6"
-                  class="py-6 text-center text-muted"
-                >
-                  Nic nie czeka na naszą odpowiedź.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </UCard>
+      </details>
     </section>
 
-    <div class="mt-10 flex flex-wrap items-end justify-between gap-4 border-t border-default pt-6">
-      <div>
+    <div class="mt-10 border-t border-default pt-6">
+      <div class="flex flex-wrap items-end justify-between gap-4">
         <h2 class="text-xl font-medium tracking-tight">
           {{ t('dashboard', 'monthSection') }}
         </h2>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <USelect
-          v-model="month"
-          :items="MONTH_LABELS.slice(1).map((label, index) => ({ label, value: index + 1 }))"
-          value-key="value"
-          class="w-40"
-        />
-        <UInput
-          v-model.number="year"
-          type="number"
-          class="w-24"
-          :min="2024"
-          :max="2035"
-        />
-      </div>
-    </div>
-
-    <p
-      v-if="error"
-      class="mt-6 text-sm text-error"
-    >
-      {{ error.statusMessage || error.message }}
-    </p>
-    <p
-      v-else-if="pending && !data"
-      class="mt-6 text-sm text-muted"
-    >
-      {{ t('dashboard', 'loading') }}
-    </p>
-
-    <template v-else-if="data">
-      <div class="mt-6 grid gap-4 md:grid-cols-3">
-        <UCard>
-          <p class="text-xs text-muted">
-            Utworzone w {{ monthTitle(data.year, data.month) }}
-          </p>
-          <p class="mt-1 text-2xl font-medium">
-            {{ data.monthTotal }}
-          </p>
-        </UCard>
-        <UCard>
-          <p class="text-xs text-muted">
-            {{ t('dashboard', 'topTopic') }}
-          </p>
-          <p class="mt-1 text-2xl font-medium">
-            {{ topCategory?.label ?? '—' }}
-          </p>
-          <p class="text-xs text-muted">
-            <template v-if="topCategory">
-              {{ topCategory.count }} · {{ pct(topCategory.share) }}
-            </template>
-            <template v-else>
-              brak spraw w miesiącu
-            </template>
-          </p>
-        </UCard>
-        <UCard>
-          <p class="text-xs text-muted">
-            Otwarte teraz (open + waiting)
-          </p>
-          <p class="mt-1 text-2xl font-medium">
-            {{ data.openTotal }}
-          </p>
-        </UCard>
-      </div>
-
-      <div class="mt-6 grid gap-4 lg:grid-cols-2">
-        <UCard>
-          <h2 class="font-medium">
-            {{ t('dashboard', 'topicsInMonth') }}
-          </h2>
-          <p class="mt-1 text-sm text-muted">
-            Jeden temat na sprawę: z tagu HubSpot, a przy „Other” / bez tagu — z tematu i treści wiadomości.
-          </p>
-          <ul class="mt-4 space-y-3">
-            <li
-              v-for="row in data.byCategory"
-              :key="row.category"
-            >
-              <div class="flex items-baseline justify-between gap-3 text-sm">
-                <span class="font-medium">{{ row.label }}</span>
-                <span class="text-muted">{{ row.count }} · {{ pct(row.share) }}</span>
-              </div>
-              <div class="mt-1 h-2 rounded bg-muted/30">
-                <div
-                  class="h-2 rounded bg-primary"
-                  :style="{ width: barWidth(row.count, categoryMax) }"
-                />
-              </div>
-            </li>
-            <li
-              v-if="!data.byCategory.length"
-              class="py-6 text-center text-sm text-muted"
-            >
-              Brak spraw w wybranym miesiącu.
-            </li>
-          </ul>
-        </UCard>
-
-        <UCard>
-          <h2 class="font-medium">
-            {{ t('dashboard', 'channelsInMonth') }}
-          </h2>
-          <p class="mt-1 text-sm text-muted">
-            Skąd przyszły sprawy w tym samym okresie.
-          </p>
-          <ul class="mt-4 space-y-3">
-            <li
-              v-for="row in data.byChannel"
-              :key="row.channel"
-            >
-              <div class="flex items-baseline justify-between gap-3 text-sm">
-                <span class="font-medium">{{ row.label }}</span>
-                <span class="text-muted">{{ row.count }} · {{ pct(row.share) }}</span>
-              </div>
-              <div class="mt-1 h-2 rounded bg-muted/30">
-                <div
-                  class="h-2 rounded bg-primary"
-                  :style="{ width: barWidth(row.count, channelMax) }"
-                />
-              </div>
-            </li>
-            <li
-              v-if="!data.byChannel.length"
-              class="py-6 text-center text-sm text-muted"
-            >
-              Brak spraw w wybranym miesiącu.
-            </li>
-          </ul>
-        </UCard>
-      </div>
-
-      <UCard class="mt-6">
-        <h2 class="font-medium">
-          {{ t('dashboard', 'trendTitle') }}
-        </h2>
-        <p class="mt-1 text-sm text-muted">
-          Ostatnie 6 miesięcy do {{ monthTitle(data.year, data.month) }} — łączna liczba spraw
-          i najczęstszy temat w każdym miesiącu.
-        </p>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div
-            v-for="point in data.trend"
-            :key="`${point.year}-${point.month}`"
-            class="rounded-lg border border-default p-3"
-          >
-            <p class="text-xs text-muted capitalize">
-              {{ monthTitle(point.year, point.month) }}
-            </p>
-            <p class="mt-1 text-xl font-medium">
-              {{ point.total }}
-            </p>
-            <div class="mt-2 h-2 rounded bg-muted/30">
-              <div
-                class="h-2 rounded bg-primary"
-                :style="{ width: barWidth(point.total, trendMax) }"
-              />
-            </div>
-            <p class="mt-2 text-xs text-muted">
-              <template v-if="point.categories[0]">
-                top: {{ point.categories[0].label }} ({{ point.categories[0].count }})
-              </template>
-              <template v-else>
-                brak danych
-              </template>
-            </p>
-          </div>
+        <div
+          v-if="showMonthStats"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <USelect
+            v-model="month"
+            :items="monthLabels.slice(1).map((label, index) => ({ label, value: index + 1 }))"
+            value-key="value"
+            class="w-40"
+          />
+          <UInput
+            v-model.number="year"
+            type="number"
+            class="w-24"
+            :min="2024"
+            :max="2035"
+          />
         </div>
-      </UCard>
-    </template>
+      </div>
+
+      <div
+        v-if="!showMonthStats"
+        class="mt-4"
+      >
+        <UButton
+          color="neutral"
+          variant="outline"
+          @click="loadMonthStats"
+        >
+          {{ t('dashboard', 'loadMonth') }}
+        </UButton>
+      </div>
+
+      <template v-else>
+        <p
+          v-if="error"
+          class="mt-6 text-sm text-error"
+        >
+          {{ error.statusMessage || error.message }}
+        </p>
+        <p
+          v-else-if="pending && !data"
+          class="mt-6 text-sm text-muted"
+        >
+          {{ t('dashboard', 'loading') }}
+        </p>
+
+        <template v-else-if="data">
+          <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <UCard>
+              <p class="text-xs text-muted">
+                {{ monthTitle(data.year, data.month) }}
+              </p>
+              <p class="mt-1 text-2xl font-medium">
+                {{ data.monthTotal }}
+              </p>
+            </UCard>
+            <UCard>
+              <p class="text-xs text-muted">
+                {{ t('dashboard', 'topTopic') }}
+              </p>
+              <p class="mt-1 text-2xl font-medium">
+                {{ topCategory?.label ?? '—' }}
+              </p>
+              <p class="text-xs text-muted">
+                <template v-if="topCategory">
+                  {{ topCategory.count }} · {{ pct(topCategory.share) }}
+                </template>
+                <template v-else>
+                  {{ t('dashboard', 'noMonthCases') }}
+                </template>
+              </p>
+            </UCard>
+            <UCard>
+              <p class="text-xs text-muted">
+                {{ t('dashboard', 'open') }}
+              </p>
+              <p class="mt-1 text-2xl font-medium">
+                {{ data.openTotal }}
+              </p>
+            </UCard>
+          </div>
+
+          <div class="mt-6 grid gap-4 lg:grid-cols-2">
+            <UCard>
+              <h2 class="font-medium">
+                {{ t('dashboard', 'topicsInMonth') }}
+              </h2>
+              <ul class="mt-4 space-y-3">
+                <li
+                  v-for="row in data.byCategory"
+                  :key="row.category"
+                >
+                  <div class="flex items-baseline justify-between gap-3 text-sm">
+                    <span class="font-medium">{{ row.label }}</span>
+                    <span class="text-muted">{{ row.count }} · {{ pct(row.share) }}</span>
+                  </div>
+                  <div class="mt-1 h-2 rounded bg-muted/30">
+                    <div
+                      class="h-2 rounded bg-primary"
+                      :style="{ width: barWidth(row.count, categoryMax) }"
+                    />
+                  </div>
+                </li>
+              </ul>
+            </UCard>
+
+            <UCard>
+              <h2 class="font-medium">
+                {{ t('dashboard', 'channelsInMonth') }}
+              </h2>
+              <ul class="mt-4 space-y-3">
+                <li
+                  v-for="row in data.byChannel"
+                  :key="row.channel"
+                >
+                  <div class="flex items-baseline justify-between gap-3 text-sm">
+                    <span class="font-medium">{{ row.label }}</span>
+                    <span class="text-muted">{{ row.count }} · {{ pct(row.share) }}</span>
+                  </div>
+                  <div class="mt-1 h-2 rounded bg-muted/30">
+                    <div
+                      class="h-2 rounded bg-primary"
+                      :style="{ width: barWidth(row.count, channelMax) }"
+                    />
+                  </div>
+                </li>
+              </ul>
+            </UCard>
+          </div>
+
+          <UCard class="mt-6">
+            <h2 class="font-medium">
+              {{ t('dashboard', 'trendTitle') }}
+            </h2>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <div
+                v-for="point in data.trend"
+                :key="`${point.year}-${point.month}`"
+                class="rounded-lg border border-default p-3"
+              >
+                <p class="text-xs text-muted capitalize">
+                  {{ monthTitle(point.year, point.month) }}
+                </p>
+                <p class="mt-1 text-xl font-medium">
+                  {{ point.total }}
+                </p>
+                <div class="mt-2 h-2 rounded bg-muted/30">
+                  <div
+                    class="h-2 rounded bg-primary"
+                    :style="{ width: barWidth(point.total, trendMax) }"
+                  />
+                </div>
+                <p class="mt-2 text-xs text-muted">
+                  <template v-if="point.categories[0]">
+                    top: {{ point.categories[0].label }} ({{ point.categories[0].count }})
+                  </template>
+                  <template v-else>
+                    —
+                  </template>
+                </p>
+              </div>
+            </div>
+          </UCard>
+        </template>
+      </template>
+    </div>
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isAgentClosedText, ticketTopic, topicFromText, TOPICS, TOPIC_LABELS, TOPIC_NEXT_STEP } from './ticket-topic'
+import { isAgentClosedText, needsTopicText, ticketTopic, topicFromText, TOPICS, TOPIC_LABELS, TOPIC_NEXT_STEP } from './ticket-topic'
 
 describe('ticketTopic', () => {
   it('bierze konkretny tag HubSpot przed treścią', () => {
@@ -25,6 +25,13 @@ describe('ticketTopic', () => {
     for (const [sourceCategory, subject, text, expected] of cases) {
       expect(ticketTopic({ sourceCategory, subject, text }), subject).toBe(expected)
     }
+  })
+
+  it('needsTopicText gdy brak konkretnego tagu HubSpot', () => {
+    expect(needsTopicText('dbSS Issue')).toBe(false)
+    expect(needsTopicText('Other')).toBe(true)
+    expect(needsTopicText(null)).toBe(true)
+    expect(needsTopicText('')).toBe(true)
   })
 
   it('bez tekstu zwraca „Do rozpoznania”, nie zgaduje', () => {

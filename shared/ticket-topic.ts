@@ -141,6 +141,11 @@ function hubspotTopic(sourceCategory: string | null | undefined): Topic | null {
   return null
 }
 
+/** True gdy brak konkretnego tagu HubSpot — wtedy temat idzie z subject/treści. */
+export function needsTopicText(sourceCategory: string | null | undefined): boolean {
+  return hubspotTopic(sourceCategory) == null
+}
+
 /** Temat z tekstu. Bez podglądu tekstu zwraca „unknown”. */
 export function topicFromText(subject: string | null | undefined, text: string | null | undefined): Topic {
   // Temat maila HubSpota „Conversation from Inbox (x@y)” nic nie mówi — patrzymy wtedy tylko na treść.

@@ -474,20 +474,19 @@ function insertDraft() {
   if (draftText.value) replyBody.value = draftText.value
 }
 
-watch(selectedId, (id) => {
+watch(selectedId, () => {
   draftText.value = ''
   draftNeedsReview.value = false
   aiError.value = ''
-  if (id && aiEnabled.value) {
-    nextTick(() => loadSummary())
-  }
+  translatedBodies.value = {}
+  showOriginal.value = false
 })
 
 const translatedBodies = ref<Record<string, string>>({})
 const showOriginal = ref(false)
 const translating = ref(false)
 
-async function autoTranslatePanel() {
+async function translatePanel() {
   if (!aiEnabled.value || !panelTicket.value?.events?.length) {
     translatedBodies.value = {}
     return
@@ -515,17 +514,13 @@ async function autoTranslatePanel() {
       }
     })
     translatedBodies.value = map
+    showOriginal.value = false
   } catch {
     translatedBodies.value = {}
   } finally {
     translating.value = false
   }
 }
-
-watch([locale, panelEvents, aiEnabled], () => {
-  showOriginal.value = false
-  autoTranslatePanel()
-})
 
 const departmentSelectItems = computed(() =>
   DEPARTMENTS.map(value => ({
@@ -1085,15 +1080,27 @@ const pageLabel = computed(() => {
                   class="ms-2 text-[#727487]"
                 >{{ t('translate', 'translating') }}</span>
               </p>
-              <UButton
-                v-if="Object.keys(translatedBodies).length"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                @click="showOriginal = !showOriginal"
-              >
-                {{ showOriginal ? t('translate', 'showTranslation') : t('translate', 'showOriginal') }}
-              </UButton>
+              <div class="flex items-center gap-1">
+                <UButton
+                  v-if="aiEnabled && panelEvents.length"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  :loading="translating"
+                  @click="translatePanel"
+                >
+                  {{ t('translate', 'run') }}
+                </UButton>
+                <UButton
+                  v-if="Object.keys(translatedBodies).length"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  @click="showOriginal = !showOriginal"
+                >
+                  {{ showOriginal ? t('translate', 'showTranslation') : t('translate', 'showOriginal') }}
+                </UButton>
+              </div>
             </div>
             <ol class="mt-2 space-y-3">
               <li
