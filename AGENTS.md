@@ -27,7 +27,7 @@ Nie przenoś polityk RLS z sun.logistics. Tam szeroka polityka (`auth.uid() is n
 
 ## Odczyt
 
-Lista spraw: jawne kolumny, stronicowanie (`TICKET_LIST_PAGE_SIZE` = 50, max 100), domyślny filtr statusu `open`. Podsumowanie SLA to osobny, wąski select, nie druga kopia pełnej listy.
+Lista spraw: jawne kolumny, stronicowanie (`TICKET_LIST_PAGE_SIZE` = 50, max 100), domyślny filtr statusu `open`, kolejki `ownerId` = `all` / `mine` / `unassigned`. Podsumowanie SLA to osobny, wąski select, nie druga kopia pełnej listy.
 
 Indeks listy: `tickets_business_changed_idx`.
 

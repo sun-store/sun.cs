@@ -3,12 +3,17 @@ import {
   CHANNEL_LABELS,
   CHANNELS,
   STATUS_LABELS,
+  type AppRole,
   type Channel,
   type TicketStatus
 } from '~~/shared/domain'
+import { seesAllTickets } from '~~/shared/access'
+
+type QueueFilter = 'all' | 'mine' | 'unassigned'
 
 const status = ref<TicketStatus | 'all'>('open')
 const channel = ref<Channel | 'all'>('all')
+const queue = ref<QueueFilter>('all')
 const page = ref(1)
 
 type TicketsListResponse = {
@@ -33,15 +38,18 @@ type TicketsListResponse = {
   totalPages: number
 }
 
+const { data: me } = await useFetch<{ role?: string, agentId?: string | null }>('/api/me')
+
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => ({
     status: status.value,
     channel: channel.value,
+    ownerId: queue.value,
     page: page.value
   }))
 })
 
-watch([status, channel], () => {
+watch([status, channel, queue], () => {
   if (page.value !== 1) {
     page.value = 1
     return
@@ -64,6 +72,17 @@ const channelItems = [
   { label: 'Wszystkie kanały', value: 'all' },
   ...CHANNELS.map(value => ({ label: CHANNEL_LABELS[value], value }))
 ]
+
+const queueItems = computed(() => {
+  const items: Array<{ label: string, value: QueueFilter }> = [
+    { label: 'Wszystkie kolejki', value: 'all' },
+    { label: 'Moje', value: 'mine' }
+  ]
+  if (me.value?.role && seesAllTickets(me.value.role as AppRole)) {
+    items.push({ label: 'Nieprzypisane', value: 'unassigned' })
+  }
+  return items
+})
 
 function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclusion: string | null } }) {
   if (!ticket.sla.eligible) {
@@ -104,6 +123,12 @@ const pageLabel = computed(() => {
 
     <div class="mt-6 flex flex-wrap gap-3">
       <USelect
+        v-model="queue"
+        :items="queueItems"
+        value-key="value"
+        class="w-48"
+      />
+      <USelect
         v-model="status"
         :items="statusItems"
         value-key="value"
@@ -132,7 +157,36 @@ const pageLabel = computed(() => {
     </div>
 
     <template v-else>
-      <UCard class="mt-6">
+      <div
+        v-if="data"
+        class="mt-4 flex flex-wrap items-center justify-between gap-3"
+      >
+        <p class="text-sm text-muted">
+          {{ pageLabel }}
+        </p>
+        <div class="flex gap-2">
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :disabled="page <= 1 || pending"
+            @click="page -= 1"
+          >
+            Poprzednia
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :disabled="page >= (data.totalPages || 1) || pending"
+            @click="page += 1"
+          >
+            Następna
+          </UButton>
+        </div>
+      </div>
+
+      <UCard class="mt-3">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="text-muted">
@@ -199,35 +253,6 @@ const pageLabel = computed(() => {
           </table>
         </div>
       </UCard>
-
-      <div
-        v-if="data"
-        class="mt-4 flex flex-wrap items-center justify-between gap-3"
-      >
-        <p class="text-sm text-muted">
-          {{ pageLabel }}
-        </p>
-        <div class="flex gap-2">
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="page <= 1 || pending"
-            @click="page -= 1"
-          >
-            Poprzednia
-          </UButton>
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="page >= (data.totalPages || 1) || pending"
-            @click="page += 1"
-          >
-            Następna
-          </UButton>
-        </div>
-      </div>
     </template>
   </div>
 </template>

@@ -81,7 +81,7 @@ export type EventRow = {
 export async function listTickets(filters: {
   status?: TicketStatus | 'all'
   channel?: Channel | 'all'
-  ownerId?: string | 'all'
+  ownerId?: string | 'all' | 'mine' | 'unassigned'
   page?: number
   pageSize?: number
 }, actor?: TicketActor) {
@@ -100,7 +100,16 @@ export async function listTickets(filters: {
     params.push(filters.channel)
     clauses.push(`t.origin_channel = $${params.length}`)
   }
-  if (filters.ownerId && filters.ownerId !== 'all') {
+  if (filters.ownerId === 'unassigned') {
+    clauses.push('t.owner_id is null')
+  } else if (filters.ownerId === 'mine') {
+    if (!actor?.agentId) {
+      clauses.push('false')
+    } else {
+      params.push(actor.agentId)
+      clauses.push(`t.owner_id = $${params.length}::uuid`)
+    }
+  } else if (filters.ownerId && filters.ownerId !== 'all') {
     params.push(filters.ownerId)
     clauses.push(`t.owner_id = $${params.length}::uuid`)
   }
