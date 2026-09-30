@@ -37,7 +37,7 @@ Punkt 1 trzeba poprawić dziś: dotyczy produkcji z danymi klientów. Punkty 2�
 | 6 | Leadzi widzą wszystkie sprawy, reszta tylko własne. Nie ma pojęcia zespołu | Przy wejściu finansów i logistyki albo wszyscy widzą wszystko, albo nikt nie widzi kolejki swojego zespołu | Zespoły i kolejki, dostęp po zespole (patrz „Moduły”) | Średni |
 | 7 | `main` ma niezsynchronizowany `package-lock`, a praca jest na `fix/ci-lockfile` | CI na `main` pada. Nie wiadomo, z której gałęzi wdraża Vercel | Scalić `fix/ci-lockfile` do `main` przez Pull Request po teście maila — lockfile już na `main` (`efe6a7b` / merge) | Średni |
 | 8 | Nie da się zdjąć właściciela sprawy (SQL `coalesce`) | Sprawa zostaje przypisana do osoby na urlopie | Jawne „nieprzypisana” w API — **zrobione** | Niski |
-| 9 | Lista spraw ucina się na 1000 bez stronicowania | Przy ok. 1000 sprawach miesięcznie już po miesiącu część znika z listy | Stronicowanie i domyślny filtr „otwarte” | Niski |
+| 9 | Lista spraw ucina się na 1000 bez stronicowania | Przy ok. 1000 sprawach miesięcznie już po miesiącu część znika z listy | Stronicowanie (50/strona) i domyślny filtr „otwarte” — **zrobione** | Niski |
 | 10 | Mail wychodzi przed zapisem w bazie | Jeśli zapis padnie, klient dostał mail, którego nie ma w sprawie | Zapis „wysyłanie” przed wysyłką, potwierdzenie po — **zrobione** | Niski |
 
 Co jest zrobione dobrze: każdy endpoint ma strażnika (`requireUser` / `requireAdmin` / `requireCron`), zapytania SQL są parametryzowane, dane wejściowe mają limity długości, sekrety zostają na serwerze, a w historii repo nie ma haseł. Zestaw 55 testów, lint i typecheck przechodzą.

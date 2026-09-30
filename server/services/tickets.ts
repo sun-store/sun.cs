@@ -16,7 +16,7 @@ import {
 import { seesAllTickets } from '../../shared/access'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
 import type { IdentifierInput } from '../../shared/resolveContact'
-import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_LIMIT } from '../../shared/text-bounds'
+import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
 import { isUuid } from '../utils/uuid'
 import { neonQuery } from './neon-db'
 import { resolveContact } from './contacts'
@@ -82,7 +82,14 @@ export async function listTickets(filters: {
   status?: TicketStatus | 'all'
   channel?: Channel | 'all'
   ownerId?: string | 'all'
+  page?: number
+  pageSize?: number
 }, actor?: TicketActor) {
+  const page = Number.isInteger(filters.page) && (filters.page ?? 0) > 0 ? (filters.page as number) : 1
+  const rawSize = Number.isInteger(filters.pageSize) ? (filters.pageSize as number) : TICKET_LIST_PAGE_SIZE
+  const pageSize = Math.min(TICKET_LIST_PAGE_SIZE_MAX, Math.max(1, rawSize))
+  const offset = (page - 1) * pageSize
+
   const clauses = ['1=1']
   const params: unknown[] = []
   if (filters.status && filters.status !== 'all') {
@@ -98,22 +105,40 @@ export async function listTickets(filters: {
     clauses.push(`t.owner_id = $${params.length}::uuid`)
   }
   clauses.push(accessSql(actor, params))
-  params.push(TICKET_LIST_LIMIT + 1)
+  const whereSql = clauses.join(' and ')
 
+  const countRows = await neonQuery<{ n: string }>(
+    `select count(*)::text as n
+     from tickets t
+     where ${whereSql}`,
+    params
+  )
+  const total = Number(countRows[0]?.n || 0)
+
+  const listParams = [...params, pageSize, offset]
+  const limitIdx = params.length + 1
+  const offsetIdx = params.length + 2
   const rows = await neonQuery<TicketRow>(
     `select ${TICKET_COLUMNS}, c.display_name as contact_name, a.display_name as owner_name,
             ${CALL_STATUS_SQL} as call_status
      from tickets t
      join contacts c on c.id = t.contact_id
      left join agents a on a.id = t.owner_id
-     where ${clauses.join(' and ')}
+     where ${whereSql}
      order by t.business_changed_at desc
-     limit $${params.length}`,
-    params
+     limit $${limitIdx} offset $${offsetIdx}`,
+    listParams
   )
-  const truncated = rows.length > TICKET_LIST_LIMIT
-  const tickets = (truncated ? rows.slice(0, TICKET_LIST_LIMIT) : rows).map(row => serializeTicket(row))
-  return { tickets, truncated }
+  const tickets = rows.map(row => serializeTicket(row))
+  const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize)
+  return {
+    tickets,
+    page,
+    pageSize,
+    total,
+    totalPages,
+    truncated: false
+  }
 }
 
 export async function getTicket(id: string, actor?: TicketActor) {

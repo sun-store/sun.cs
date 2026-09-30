@@ -7,8 +7,9 @@ import {
   type TicketStatus
 } from '~~/shared/domain'
 
-const status = ref<TicketStatus | 'all'>('all')
+const status = ref<TicketStatus | 'all'>('open')
 const channel = ref<Channel | 'all'>('all')
+const page = ref(1)
 
 type TicketsListResponse = {
   tickets: Array<{
@@ -16,6 +17,8 @@ type TicketsListResponse = {
     subject: string | null
     status: string
     channel: string
+    contactName?: string | null
+    ownerName?: string | null
     sla: { eligible: boolean, met: boolean | null, exclusion: string | null }
     [key: string]: unknown
   }>
@@ -24,14 +27,30 @@ type TicketsListResponse = {
     slaEligible: number
     slaMet: number
   }
-  truncated?: boolean
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
 }
 
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => ({
     status: status.value,
-    channel: channel.value
+    channel: channel.value,
+    page: page.value
   }))
+})
+
+watch([status, channel], () => {
+  if (page.value !== 1) {
+    page.value = 1
+    return
+  }
+  refresh()
+})
+
+watch(page, () => {
+  refresh()
 })
 
 const statusItems = [
@@ -54,6 +73,15 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
   }
   return ticket.sla.met ? 'Spełnione' : 'Przekroczone'
 }
+
+const pageLabel = computed(() => {
+  if (!data.value) return ''
+  const { page: p, totalPages, total, pageSize } = data.value
+  if (total === 0) return '0 spraw'
+  const from = (p - 1) * pageSize + 1
+  const to = Math.min(p * pageSize, total)
+  return `${from}–${to} z ${total} · strona ${p}/${totalPages}`
+})
 </script>
 
 <template>
@@ -80,14 +108,12 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
         :items="statusItems"
         value-key="value"
         class="w-40"
-        @update:model-value="refresh()"
       />
       <USelect
         v-model="channel"
         :items="channelItems"
         value-key="value"
         class="w-52"
-        @update:model-value="refresh()"
       />
     </div>
 
@@ -164,12 +190,34 @@ function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclu
           </tr>
         </tbody>
       </table>
-      <p
-        v-if="data?.truncated"
-        class="mt-4 text-sm text-muted"
+      <div
+        v-if="data"
+        class="mt-4 flex flex-wrap items-center justify-between gap-3"
       >
-        Lista pokazuje 1000 najnowszych spraw. Starsze są w bazie, tu ich nie ma.
-      </p>
+        <p class="text-sm text-muted">
+          {{ pageLabel }}
+        </p>
+        <div class="flex gap-2">
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :disabled="page <= 1 || pending"
+            @click="page -= 1"
+          >
+            Poprzednia
+          </UButton>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :disabled="page >= (data.totalPages || 1) || pending"
+            @click="page += 1"
+          >
+            Następna
+          </UButton>
+        </div>
+      </div>
     </UCard>
   </div>
 </template>
