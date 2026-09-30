@@ -1,6 +1,7 @@
 import { updateTicket } from '../../services/tickets'
 import { requireUser } from '../../utils/session'
 import { CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES } from '../../../shared/domain'
+import { isDepartment, type Department } from '../../../shared/departments'
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -17,6 +18,7 @@ export default defineEventHandler(async (event) => {
     category?: string | null
     priority?: typeof TICKET_PRIORITIES[number] | null
     relatedTransactionId?: string | null
+    department?: Department
   } = {}
 
   if (body && typeof body === 'object' && 'status' in body) {
@@ -49,6 +51,12 @@ export default defineEventHandler(async (event) => {
     patch.relatedTransactionId = typeof body.relatedTransactionId === 'string'
       ? body.relatedTransactionId
       : null
+  }
+  if (body && typeof body === 'object' && 'department' in body) {
+    if (!isDepartment(body.department)) {
+      throw createError({ statusCode: 400, statusMessage: 'Nieznany dział.' })
+    }
+    patch.department = body.department
   }
 
   try {
