@@ -18,7 +18,8 @@ export default defineNuxtConfig({
     public: {
       siteName: 'sun.support',
       microsoftSso: Boolean(String(process.env.MICROSOFT_CLIENT_ID || '').trim()),
-      googleSso: Boolean(String(process.env.GOOGLE_CLIENT_ID || '').trim())
+      googleSso: Boolean(String(process.env.GOOGLE_CLIENT_ID || '').trim()),
+      aiEnabled: Boolean(String(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '').trim())
     }
   },
 

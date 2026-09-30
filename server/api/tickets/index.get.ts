@@ -4,7 +4,7 @@ import { isUuid } from '../../utils/uuid'
 import { canBrowseAllDepartments } from '../../../shared/access'
 import { CHANNELS, TICKET_STATUSES, type Channel, type TicketStatus } from '../../../shared/domain'
 import { DEPARTMENTS, isDepartment, type Department } from '../../../shared/departments'
-import { isTicketQueue, type TicketQueue } from '../../../shared/ticket-queues'
+import { normalizeQueueKey, type QueueKey } from '../../../shared/queues'
 import { TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../../shared/text-bounds'
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
@@ -59,9 +59,10 @@ function parseDepartment(value: unknown): Department | 'all' {
   throw createError({ statusCode: 400, statusMessage: 'Nieznany dział.' })
 }
 
-function parseQueue(value: unknown): TicketQueue | undefined {
+function parseQueue(value: unknown): QueueKey | undefined {
   if (value == null || value === '') return undefined
-  if (isTicketQueue(value)) return value
+  const key = normalizeQueueKey(value)
+  if (key) return key
   throw createError({ statusCode: 400, statusMessage: 'Nieznana kolejka.' })
 }
 
@@ -71,8 +72,11 @@ function parseQ(value: unknown): string | undefined {
     throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowe wyszukiwanie.' })
   }
   const trimmed = value.trim()
-  if (trimmed.length > 200) {
+  if (trimmed.length > 120) {
     throw createError({ statusCode: 400, statusMessage: 'Zapytanie za długie.' })
+  }
+  if (trimmed.length === 1) {
+    throw createError({ statusCode: 400, statusMessage: 'Wpisz co najmniej 2 znaki.' })
   }
   return trimmed || undefined
 }
@@ -82,7 +86,7 @@ export default defineEventHandler(async (event) => {
   const actor: TicketActor = { role: user.role, agentId: user.agentId, department: user.department }
   const query = getQuery(event)
 
-  const q = parseQ(query.q)
+  const q = parseQ(query.q ?? query.search)
   const queue = q ? undefined : parseQueue(query.queue)
   const status = parseStatus(query.status, Boolean(queue || q))
   const channel = parseChannel(query.channel)

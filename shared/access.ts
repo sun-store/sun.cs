@@ -48,3 +48,14 @@ export function resolveTicketAccess(actor: {
   if (actor.department) return { type: 'department', department: actor.department }
   return { type: 'none' }
 }
+
+/** Alias architektury: `{ kind }` zamiast `{ type }`. */
+export function ticketScope(actor: {
+  role: AppRole
+  department?: Department | null
+} | undefined): { kind: 'all' } | { kind: 'department', department: Department } | { kind: 'none' } {
+  const access = resolveTicketAccess(actor)
+  if (access.type === 'all') return { kind: 'all' }
+  if (access.type === 'none') return { kind: 'none' }
+  return { kind: 'department', department: access.department }
+}

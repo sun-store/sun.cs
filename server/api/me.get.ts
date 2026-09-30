@@ -1,5 +1,10 @@
 import { requireUser } from '../utils/session'
+import { hasAiConfig } from '../services/ai'
 
 export default defineEventHandler(async (event) => {
-  return requireUser(event)
+  const user = await requireUser(event)
+  return {
+    ...user,
+    aiEnabled: hasAiConfig()
+  }
 })

@@ -15,22 +15,27 @@ import {
   type Department
 } from '~~/shared/departments'
 import {
-  TICKET_QUEUES,
-  TICKET_QUEUE_LABELS,
-  type TicketQueue
-} from '~~/shared/ticket-queues'
+  QUEUES,
+  QUEUE_LABELS,
+  type QueueKey
+} from '~~/shared/queues'
 import {
   cleanSubjectLine,
-  replyDueLabel,
   shortTransactionId
 } from '~~/shared/reply-due-label'
+import type { SlaBadge } from '~~/shared/sla-label'
 
-const workQueue = ref<TicketQueue>('now')
+const workQueue = ref<QueueKey>('now')
 const status = ref<TicketStatus | 'all'>('all')
 const page = ref(1)
 const searchInput = ref('')
 const searchQ = ref('')
 const selectedId = ref<string | null>(null)
+const route = useRoute()
+const router = useRouter()
+const config = useRuntimeConfig()
+const meAiEnabled = ref(false)
+const aiEnabled = computed(() => Boolean(config.public.aiEnabled || meAiEnabled.value))
 
 type TicketListItem = {
   id: string
@@ -48,6 +53,7 @@ type TicketListItem = {
   firstContactAt: string
   awaiting?: 'us' | 'customer' | null
   replyDueAt?: string | null
+  slaBadge?: SlaBadge
   [key: string]: unknown
 }
 
@@ -65,15 +71,18 @@ type TicketsListResponse = {
 }
 
 type CountsResponse = {
-  counts: Record<TicketQueue, number>
-  queues: Array<{ id: TicketQueue, label: string, count: number }>
+  counts: Record<QueueKey, number>
+  queues: Array<{ id: QueueKey, label: string, count: number }>
 }
 
 const { data: me } = await useFetch<{
   role?: AppRole
   agentId?: string | null
   department?: Department
+  aiEnabled?: boolean
 }>('/api/me')
+
+meAiEnabled.value = Boolean(me.value?.aiEnabled)
 
 const department = ref<Department | 'all'>(
   me.value?.role
@@ -84,8 +93,36 @@ const department = ref<Department | 'all'>(
 watch(me, (value) => {
   if (!value?.role) return
   department.value = defaultDepartmentFilter(value.role, value.department)
+  meAiEnabled.value = Boolean(value.aiEnabled)
 }, { once: true })
 
+watch(() => route.query.queue, (value) => {
+  if (typeof value === 'string' && (QUEUES as readonly string[]).includes(value)) {
+    workQueue.value = value as QueueKey
+  }
+}, { immediate: true })
+
+watch(() => route.query.case, (value) => {
+  selectedId.value = typeof value === 'string' ? value : null
+}, { immediate: true })
+
+watch(() => route.query.search, (value) => {
+  if (typeof value === 'string') {
+    searchInput.value = value
+    searchQ.value = value
+  }
+}, { immediate: true })
+
+function syncUrl() {
+  const query: Record<string, string> = {
+    queue: workQueue.value
+  }
+  if (department.value !== 'all') query.department = department.value
+  if (searchQ.value) query.search = searchQ.value
+  if (selectedId.value) query.case = selectedId.value
+  if (page.value > 1) query.page = String(page.value)
+  router.replace({ query })
+}
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => {
     const base: Record<string, string | number> = {
@@ -120,6 +157,10 @@ type TicketPanelDetail = {
   status?: string
   ownerId?: string | null
   ownerName?: string | null
+  aiSummary?: string | null
+  aiNeed?: string | null
+  aiNextStep?: string | null
+  slaBadge?: SlaBadge
   events?: Array<{
     id: string
     senderType: string
@@ -203,11 +244,31 @@ function clearSearch() {
 
 function selectTicket(id: string) {
   selectedId.value = id
+  syncUrl()
 }
 
 function closePanel() {
   selectedId.value = null
+  syncUrl()
 }
+
+async function takeNext() {
+  try {
+    const result = await $fetch<{ id: string } | null>('/api/tickets/next', {
+      method: 'POST',
+      body: { queue: workQueue.value }
+    })
+    await refresh()
+    await refreshCounts()
+    if (result?.id) selectTicket(result.id)
+  } catch {
+    // brak spraw albo błąd — lista już odświeżona
+  }
+}
+
+watch([workQueue, department, searchQ, selectedId, page], () => {
+  syncUrl()
+})
 
 const panelEvents = computed(() => {
   const events = panelTicket.value?.events || []
@@ -354,6 +415,71 @@ async function closePanelTicket() {
   }
 }
 
+const draftText = ref('')
+const draftNeedsReview = ref(false)
+const aiBusy = ref(false)
+const aiError = ref('')
+
+async function loadSummary() {
+  if (!selectedId.value || !aiEnabled.value) return
+  aiBusy.value = true
+  aiError.value = ''
+  try {
+    const result = await $fetch<{
+      summary: string
+      need: string
+      nextStep: string
+    }>(`/api/tickets/${selectedId.value}/summary`, { method: 'POST' })
+    if (panelTicket.value) {
+      panelTicket.value = {
+        ...panelTicket.value,
+        aiSummary: result.summary,
+        aiNeed: result.need,
+        aiNextStep: result.nextStep
+      }
+    }
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string }, statusCode?: number }
+    if (fetchErr.statusCode !== 503) {
+      aiError.value = fetchErr.data?.statusMessage || 'Nie udało się wygenerować podsumowania.'
+    }
+  } finally {
+    aiBusy.value = false
+  }
+}
+
+async function loadDraft(variant: 'short' | 'normal' = 'normal') {
+  if (!selectedId.value || !aiEnabled.value) return
+  aiBusy.value = true
+  aiError.value = ''
+  try {
+    const result = await $fetch<{ text: string, needsReview: boolean }>(
+      `/api/tickets/${selectedId.value}/draft`,
+      { method: 'POST', body: { variant } }
+    )
+    draftText.value = result.text
+    draftNeedsReview.value = result.needsReview
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    aiError.value = fetchErr.data?.statusMessage || 'Nie udało się wygenerować szkicu.'
+  } finally {
+    aiBusy.value = false
+  }
+}
+
+function insertDraft() {
+  if (draftText.value) replyBody.value = draftText.value
+}
+
+watch(selectedId, (id) => {
+  draftText.value = ''
+  draftNeedsReview.value = false
+  aiError.value = ''
+  if (id && aiEnabled.value) {
+    nextTick(() => loadSummary())
+  }
+})
+
 const departmentSelectItems = DEPARTMENTS.map(value => ({
   label: DEPARTMENT_LABELS[value],
   value
@@ -375,9 +501,9 @@ const departmentItems = computed(() => {
 })
 
 const queueNav = computed(() =>
-  TICKET_QUEUES.map(id => ({
+  QUEUES.map(id => ({
     id,
-    label: TICKET_QUEUE_LABELS[id],
+    label: QUEUE_LABELS[id],
     count: countsData.value?.counts?.[id] ?? 0
   }))
 )
@@ -407,13 +533,14 @@ function summaryText(ticket: TicketListItem) {
   return cleanSubjectLine(ticket.subject)
 }
 
-function slaFor(ticket: { awaiting?: 'us' | 'customer' | null, replyDueAt?: string | null }) {
-  return replyDueLabel(ticket.awaiting, ticket.replyDueAt)
+function slaFor(ticket: { awaiting?: 'us' | 'customer' | null, replyDueAt?: string | null, slaBadge?: SlaBadge }) {
+  if (ticket.slaBadge) return ticket.slaBadge
+  return { text: '—', tone: 'muted' as const }
 }
 
-function slaClass(tone: 'overdue' | 'urgent' | 'muted') {
-  if (tone === 'overdue') return 'text-black font-medium'
-  if (tone === 'urgent') return 'font-medium text-[#F6D736]'
+function slaClass(tone: string) {
+  if (tone === 'late' || tone === 'overdue') return 'text-black font-medium'
+  if (tone === 'soon' || tone === 'urgent') return 'font-medium text-[#F6D736]'
   return 'text-[#727487]'
 }
 
@@ -428,25 +555,6 @@ function ownerInitials(ticket: TicketListItem) {
   if (parts.length === 0) return ''
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
   return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase()
-}
-
-async function takeNext() {
-  const list = data.value?.tickets || []
-  const next = list.find(t => t.awaiting === 'us') || list[0]
-  if (!next) return
-  if (!next.ownerId && me.value?.agentId) {
-    try {
-      await $fetch(`/api/tickets/${next.id}`, {
-        method: 'PATCH',
-        body: { ownerId: me.value.agentId }
-      })
-      await refresh()
-      await refreshCounts()
-    } catch {
-      // otwórz mimo błędu przypisania
-    }
-  }
-  selectTicket(next.id)
 }
 
 const pageLabel = computed(() => {
@@ -803,6 +911,98 @@ const pageLabel = computed(() => {
             >
               {{ ownerError }}
             </p>
+          </div>
+
+          <div class="mt-5 rounded-md bg-[#F8F8F8] p-3">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-xs font-medium">
+                Sun Agent · Podsumowanie
+              </p>
+              <UButton
+                v-if="aiEnabled"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :loading="aiBusy"
+                @click="loadSummary"
+              >
+                Odśwież
+              </UButton>
+            </div>
+            <p
+              v-if="!aiEnabled"
+              class="mt-2 text-sm text-[#727487]"
+            >
+              Brak klucza AI — ustaw ANTHROPIC_API_KEY lub OPENAI_API_KEY.
+            </p>
+            <template v-else>
+              <p class="mt-2 text-sm">
+                {{ panelTicket.aiSummary || 'Brak podsumowania — kliknij Odśwież.' }}
+              </p>
+              <p
+                v-if="panelTicket.aiNeed"
+                class="mt-2 text-sm text-[#727487]"
+              >
+                Czego potrzebuje: {{ panelTicket.aiNeed }}
+              </p>
+              <p
+                v-if="panelTicket.aiNextStep"
+                class="mt-1 text-sm text-[#727487]"
+              >
+                Następny krok: {{ panelTicket.aiNextStep }}
+              </p>
+              <div
+                v-if="draftText"
+                class="mt-3 rounded-md border border-default bg-white p-3 text-sm"
+              >
+                <p class="text-xs font-medium text-muted">
+                  Propozycja odpowiedzi
+                </p>
+                <p class="mt-1 whitespace-pre-wrap">
+                  {{ draftText }}
+                </p>
+                <p
+                  v-if="draftNeedsReview"
+                  class="mt-1 text-xs text-[#727487]"
+                >
+                  Sprawdź przed wysłaniem (płatności / faktury / spory).
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <UButton
+                    size="sm"
+                    @click="insertDraft"
+                  >
+                    Wstaw do odpowiedzi
+                  </UButton>
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    size="sm"
+                    :loading="aiBusy"
+                    @click="loadDraft('short')"
+                  >
+                    Krócej
+                  </UButton>
+                </div>
+              </div>
+              <UButton
+                v-else
+                class="mt-3"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :loading="aiBusy"
+                @click="loadDraft('normal')"
+              >
+                Zaproponuj odpowiedź
+              </UButton>
+              <p
+                v-if="aiError"
+                class="mt-2 text-sm text-error"
+              >
+                {{ aiError }}
+              </p>
+            </template>
           </div>
 
           <div class="mt-5">

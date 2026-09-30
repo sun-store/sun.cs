@@ -21,17 +21,15 @@ import {
   resolveDepartment,
   type Department
 } from '../../shared/departments'
-import {
-  replyClockAfterAgentToCustomer,
-  replyClockAfterCustomerMessage
-} from '../../shared/reply-clock'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
-import { statusAfterEvent } from '../../shared/ticket-status'
-import type { TicketQueue } from '../../shared/ticket-queues'
+import type { QueueKey } from '../../shared/queues'
+import { NOW_WINDOW_MIN } from '../../shared/queues'
+import { slaBadge } from '../../shared/sla-label'
+import { nextState } from '../../shared/ticket-state'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
 import { isUuid } from '../utils/uuid'
-import { neonQuery } from './neon-db'
+import { getNeonPool, neonQuery } from './neon-db'
 import { resolveContact } from './contacts'
 import { loadCustomerOrders } from './orders'
 
@@ -45,7 +43,9 @@ export type TicketActor = {
 const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
             t.related_transaction_id, t.owner_id, t.subject, t.created_at, t.first_contact_at,
             t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id,
-            t.source_category, t.department, t.awaiting, t.reply_due_at`
+            t.source_category, t.department, t.awaiting, t.reply_due_at,
+            t.last_customer_at, t.last_event_at,
+            t.ai_summary, t.ai_need, t.ai_next_step, t.ai_summary_at, t.ai_summary_event_at`
 
 const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
               where e.ticket_id = t.id and e.call_status is not null
@@ -82,6 +82,13 @@ export type TicketRow = {
   department?: Department | null
   awaiting?: 'us' | 'customer' | null
   reply_due_at?: Date | null
+  last_customer_at?: Date | null
+  last_event_at?: Date | null
+  ai_summary?: string | null
+  ai_need?: string | null
+  ai_next_step?: string | null
+  ai_summary_at?: Date | null
+  ai_summary_event_at?: Date | null
 }
 
 export type EventRow = {
@@ -100,7 +107,7 @@ export type EventRow = {
 }
 
 function applyQueueFilter(
-  queue: TicketQueue | undefined,
+  queue: QueueKey | undefined,
   clauses: string[],
   params: unknown[],
   actor?: TicketActor
@@ -111,10 +118,11 @@ function applyQueueFilter(
     clauses.push(`t.status <> 'closed'`)
     clauses.push('t.reply_due_at is not null')
     clauses.push('t.reply_due_at >= now()')
-    clauses.push(`t.reply_due_at <= now() + interval '60 minutes'`)
+    params.push(NOW_WINDOW_MIN)
+    clauses.push(`t.reply_due_at <= now() + make_interval(mins => $${params.length}::int)`)
     return
   }
-  if (queue === 'todo') {
+  if (queue === 'reply') {
     clauses.push(`t.awaiting = 'us'`)
     clauses.push(`t.status <> 'closed'`)
     return
@@ -131,7 +139,7 @@ function applyQueueFilter(
     clauses.push(`t.status <> 'closed'`)
     return
   }
-  if (queue === 'waiting_customer') {
+  if (queue === 'waiting') {
     clauses.push(`t.awaiting = 'customer'`)
     clauses.push(`t.status <> 'closed'`)
     return
@@ -147,11 +155,11 @@ function applyQueueFilter(
   }
 }
 
-function orderSqlForQueue(queue: TicketQueue | undefined): string {
-  if (queue === 'waiting_customer') {
+function orderSqlForQueue(queue: QueueKey | undefined): string {
+  if (queue === 'waiting') {
     return 't.business_changed_at desc'
   }
-  if (queue === 'now' || queue === 'todo' || queue === 'overdue' || queue === 'unassigned' || queue === 'mine') {
+  if (queue === 'now' || queue === 'reply' || queue === 'overdue' || queue === 'unassigned' || queue === 'mine') {
     return 't.reply_due_at asc nulls last, t.business_changed_at desc'
   }
   return 't.business_changed_at desc'
@@ -162,7 +170,7 @@ export async function listTickets(filters: {
   channel?: Channel | 'all'
   ownerId?: string | 'all' | 'mine' | 'unassigned'
   department?: Department | 'all'
-  queue?: TicketQueue
+  queue?: QueueKey
   q?: string
   page?: number
   pageSize?: number
@@ -284,11 +292,11 @@ export async function ticketQueueCounts(
 
   const rows = await neonQuery<{
     now: string
-    todo: string
+    reply: string
     mine: string
     overdue: string
     unassigned: string
-    waiting_customer: string
+    waiting: string
   }>(
     `select
        count(*) filter (
@@ -296,11 +304,11 @@ export async function ticketQueueCounts(
            and t.status <> 'closed'
            and t.reply_due_at is not null
            and t.reply_due_at >= now()
-           and t.reply_due_at <= now() + interval '60 minutes'
+           and t.reply_due_at <= now() + make_interval(mins => ${NOW_WINDOW_MIN})
        )::text as now,
        count(*) filter (
          where t.awaiting = 'us' and t.status <> 'closed'
-       )::text as todo,
+       )::text as reply,
        count(*) filter (
          where t.status <> 'closed' and t.owner_id = ${mineParam}
        )::text as mine,
@@ -315,7 +323,7 @@ export async function ticketQueueCounts(
        )::text as unassigned,
        count(*) filter (
          where t.awaiting = 'customer' and t.status <> 'closed'
-       )::text as waiting_customer
+       )::text as waiting
      from tickets t
      where ${access} ${deptClause}`,
     params
@@ -323,12 +331,42 @@ export async function ticketQueueCounts(
   const row = rows[0]
   return {
     now: Number(row?.now || 0),
-    todo: Number(row?.todo || 0),
+    reply: Number(row?.reply || 0),
     mine: Number(row?.mine || 0),
     overdue: Number(row?.overdue || 0),
     unassigned: Number(row?.unassigned || 0),
-    waiting_customer: Number(row?.waiting_customer || 0)
+    waiting: Number(row?.waiting || 0)
   }
+}
+
+export async function claimNext(actor: TicketActor, queue: QueueKey = 'now') {
+  if (!actor.agentId) {
+    throw new Error('Brak profilu agenta — nie można wziąć sprawy.')
+  }
+  const params: unknown[] = []
+  const clauses: string[] = ['1=1']
+  applyQueueFilter(queue, clauses, params, actor)
+  clauses.push(`t.awaiting = 'us'`)
+  clauses.push(accessSql(actor, params))
+  const whereSql = clauses.join(' and ')
+  params.push(actor.agentId)
+  const agentIdx = params.length
+
+  const rows = await neonQuery<{ id: string }>(
+    `update tickets set
+       owner_id = coalesce(owner_id, $${agentIdx}::uuid),
+       business_changed_at = now()
+     where id = (
+       select t.id from tickets t
+       where ${whereSql}
+       order by t.reply_due_at asc nulls last, t.business_changed_at desc
+       for update skip locked
+       limit 1
+     )
+     returning id`,
+    params
+  )
+  return rows[0]?.id ?? null
 }
 
 export async function getTicket(id: string, actor?: TicketActor) {
@@ -500,66 +538,69 @@ export async function addEvent(ticketId: string, input: {
     first_agent_reply_at: Date | null
     closed_at: Date | null
     origin_channel: Channel
+    status: TicketStatus
+    awaiting: 'us' | 'customer' | null
+    reply_due_at: Date | null
   }>(
-    `select first_agent_reply_at, closed_at, origin_channel from tickets t where t.id = $1::uuid and ${access}`,
+    `select first_agent_reply_at, closed_at, origin_channel, status, awaiting, reply_due_at
+     from tickets t where t.id = $1::uuid and ${access}`,
     params
   )
   if (!tickets[0]) return null
-  if (tickets[0].closed_at) {
-    throw new Error('Nie można dopisać wydarzenia do zamkniętej sprawy.')
-  }
 
   const now = input.occurredAt || new Date()
-  await neonQuery(
-    `insert into ticket_events (
-       ticket_id, channel, direction, sender_type, body, call_status, external_thread_id, graph_message_id, created_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [ticketId, input.channel, input.direction, input.senderType, body, input.callStatus || null, externalThreadId, graphMessageId, now]
-  )
+  const state = nextState({
+    status: tickets[0].status,
+    awaiting: tickets[0].awaiting,
+    replyDueAt: tickets[0].reply_due_at
+  }, {
+    senderType: input.senderType,
+    direction: input.direction,
+    channel: input.channel || tickets[0].origin_channel,
+    at: now
+  })
 
   let firstReply = tickets[0].first_agent_reply_at
   if (input.senderType === 'agent' && input.direction === 'to_customer') {
     firstReply = lockFirstAgentReply(firstReply, now)
   }
 
-  const nextStatus = statusAfterEvent({
-    senderType: input.senderType,
-    direction: input.direction,
-    closed: Boolean(tickets[0].closed_at)
-  })
-
-  let awaiting: 'us' | 'customer' | null = null
-  let replyDueAt: Date | null = null
-  let clockTouched = false
-  if (input.senderType === 'customer') {
-    const clock = replyClockAfterCustomerMessage(input.channel || tickets[0].origin_channel, now)
-    awaiting = clock.awaiting
-    replyDueAt = clock.replyDueAt
-    clockTouched = true
-  } else if (
-    (input.senderType === 'agent' || input.senderType === 'bot')
-    && input.direction === 'to_customer'
-  ) {
-    const clock = replyClockAfterAgentToCustomer()
-    awaiting = clock.awaiting
-    replyDueAt = null
-    clockTouched = true
+  const client = await getNeonPool().connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `insert into ticket_events (
+         ticket_id, channel, direction, sender_type, body, call_status, external_thread_id, graph_message_id, created_at
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [ticketId, input.channel, input.direction, input.senderType, body, input.callStatus || null, externalThreadId, graphMessageId, now]
+    )
+    await client.query(
+      `update tickets
+       set first_agent_reply_at = $2,
+           status = $4::ticket_status,
+           awaiting = $5,
+           reply_due_at = $6,
+           last_event_at = $3,
+           last_customer_at = case when $7::boolean then $3 else last_customer_at end,
+           business_changed_at = $3
+       where id = $1`,
+      [
+        ticketId,
+        firstReply,
+        now,
+        state.status,
+        state.awaiting,
+        state.replyDueAt,
+        input.senderType === 'customer'
+      ]
+    )
+    await client.query('commit')
+  } catch (err) {
+    await client.query('rollback')
+    throw err
+  } finally {
+    client.release()
   }
-
-  await neonQuery(
-    `update tickets
-     set first_agent_reply_at = $2,
-         status = case
-           when status = 'closed' then status
-           when $4::text is null then status
-           else $4::ticket_status
-         end,
-         awaiting = case when $5::boolean then $6 else awaiting end,
-         reply_due_at = case when $5::boolean then $7 else reply_due_at end,
-         business_changed_at = $3
-     where id = $1`,
-    [ticketId, firstReply, now, nextStatus, clockTouched, awaiting, replyDueAt]
-  )
 
   return getTicket(ticketId, actor)
 }
@@ -852,10 +893,18 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     departmentLabel: DEPARTMENT_LABELS[department],
     awaiting: row.awaiting ?? null,
     replyDueAt: row.reply_due_at ?? null,
+    slaBadge: slaBadge(row.reply_due_at, row.awaiting),
+    lastCustomerAt: row.last_customer_at ?? null,
+    lastEventAt: row.last_event_at ?? null,
+    aiSummary: row.ai_summary ?? null,
+    aiNeed: row.ai_need ?? null,
+    aiNextStep: row.ai_next_step ?? null,
+    aiSummaryAt: row.ai_summary_at ?? null,
+    aiSummaryEventAt: row.ai_summary_event_at ?? null,
     priority: row.priority,
     relatedTransactionId: row.related_transaction_id,
     subject: row.subject,
-    summary: row.subject,
+    summary: row.ai_summary?.trim() || row.subject,
     createdAt: row.created_at,
     firstContactAt: row.first_contact_at,
     firstAgentReplyAt: row.first_agent_reply_at,

@@ -2,7 +2,7 @@ import { ticketQueueCounts, type TicketActor } from '../../services/tickets'
 import { requireUser } from '../../utils/session'
 import { canBrowseAllDepartments } from '../../../shared/access'
 import { isDepartment, type Department } from '../../../shared/departments'
-import { TICKET_QUEUES, TICKET_QUEUE_LABELS } from '../../../shared/ticket-queues'
+import { QUEUES, QUEUE_LABELS } from '../../../shared/queues'
 
 function parseDepartment(value: unknown): Department | 'all' {
   if (value == null || value === '' || value === 'all') return 'all'
@@ -22,9 +22,9 @@ export default defineEventHandler(async (event) => {
   const counts = await ticketQueueCounts(actor, department)
   return {
     counts,
-    queues: TICKET_QUEUES.map(id => ({
+    queues: QUEUES.map(id => ({
       id,
-      label: TICKET_QUEUE_LABELS[id],
+      label: QUEUE_LABELS[id],
       count: counts[id]
     }))
   }
