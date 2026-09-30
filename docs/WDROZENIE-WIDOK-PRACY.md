@@ -106,9 +106,9 @@ Dodatkowo: operacyjny termin odpowiedzi na **każdą** wiadomość klienta.
 
 ### 4.1 API
 
-- [ ] Parametr `queue` w `GET /api/tickets` (obok `department`, `status`, stronicowania).
-- [ ] `GET /api/tickets/counts` — jedno zapytanie z `count(*) filter (where …)` dla lewej kolumny; `requireUser` + ten sam `accessSql` co lista.
-- [ ] Odświeżanie liczników w UI co **60 s** (bez toastów / pushy o nowych sprawach).
+- [x] Parametr `queue` w `GET /api/tickets` (obok `department`, `status`, stronicowania).
+- [x] `GET /api/tickets/counts` — jedno zapytanie z `count(*) filter (where …)` dla lewej kolumny; `requireUser` + ten sam `accessSql` co lista.
+- [x] Odświeżanie liczników w UI co **60 s** (bez toastów / pushy o nowych sprawach).
 
 | Kolejka (`queue`) | Warunek | Sortowanie |
 | --- | --- | --- |
@@ -135,12 +135,14 @@ Zastąp / wchłoń stare `ownerId=mine|unassigned` w spójny `queue` (albo mapuj
 | Prowadzi | awatar inicjałów + imię; nieprzypisana = kółko przerywane + „nieprzypisana” (nie „—”) |
 | Od kiedy | od `first_contact_at`: „5 h”, „3 dn.” (`hangingSinceLabel`) |
 
+- [x] Kolumny SLA · Transakcja · Kategoria · Podsumowanie · Dział · Prowadzi · Od kiedy na `app/pages/index.vue`.
+
 ### 4.3 UX listy
 
-- [ ] Klik w wiersz → sprawa **obok listy** (prawa kolumna ~420 px), bez pełnej nawigacji na `/tickets/[id]`. Poniżej **1100 px** panel pod tabelą.
-- [ ] „Weź następną sprawę”: pierwsza z bieżącej kolejki z `awaiting='us'`; jeśli `owner_id is null` → przypisz do mnie, potem otwórz w panelu.
-- [ ] Wyszukiwarka w nagłówku: transakcja, mail, nazwa, treść (`ILIKE` na kontakcie / identyfikatorach / zdarzeniach), limit wyników.
-- [ ] Bez wyskakujących powiadomień o nowych sprawach.
+- [x] Klik w wiersz → sprawa **obok listy** (prawa kolumna ~420 px), bez pełnej nawigacji na `/tickets/[id]`. Poniżej **1100 px** panel pod tabelą.
+- [x] „Weź następną sprawę”: pierwsza z bieżącej kolejki z `awaiting='us'`; jeśli `owner_id is null` → przypisz do mnie, potem otwórz w panelu.
+- [x] Wyszukiwarka w nagłówku: transakcja, mail, nazwa, treść (`ILIKE` na kontakcie / identyfikatorach / zdarzeniach), limit wyników.
+- [x] Bez wyskakujących powiadomień o nowych sprawach.
 
 ---
 
@@ -152,13 +154,18 @@ Od góry:
    Pod spodem: firma · kupujący/sprzedawca · kraj · kanał · od kiedy.
 2. Dwa selecty:
    - **Dział** — przeniesienie + event systemowy (**jest**).
-   - **Prowadzi** — osoby z działu + „nieprzypisana”; API musi pozwalać na jawne `ownerId: null` (**jest** po audycie #8 — podpiąć UI listy agentów z działu).
+   - **Prowadzi** — osoby z działu + „nieprzypisana”; API musi pozwalać na jawne `ownerId: null` (**jest** w panelu listy).
 3. Karta Sun Agent (pkt 6): podsumowanie, „Czego potrzebuje”, „Następny krok”.
-4. Skrócona oś: 3 ostatnie zdarzenia + „Pokaż całą rozmowę (n)”.
+4. Skrócona oś: 3 ostatnie zdarzenia + „Pokaż całą rozmowę (n)” (**jest**).
 5. Propozycja odpowiedzi (pkt 6): „Wstaw do odpowiedzi”, „Krócej”.
-6. Pole odpowiedzi + „Wyślij”, „Notatka”, „Zamknij sprawę” (nadal kategoria + priorytet przy zamknięciu).
+6. Pole odpowiedzi + „Wyślij”, „Zamknij sprawę” (**jest** w panelu; notatka nadal na pełnej stronie).
 
 Trasa `/tickets/[id]` może zostać deep linkiem / fallbackiem mobile; desktopowy workflow = split view z pkt 4.
+
+- [x] Split panel na liście z działem, prowadzącym, osią, odpowiedzią i zamknięciem.
+- [ ] Pełna karta kontaktowa (firma · rola · kraj) w panelu.
+- [ ] Notatka wewnętrzna z panelu (obecnie tylko odpowiedź do klienta).
+
 
 ---
 
@@ -181,9 +188,9 @@ Robione **na końcu**, po stabilnych kolejkach (1–5).
 
 ## 7. Nazewnictwo w UI
 
-- [ ] „Prowadzi” zamiast „Wisi na” / „Właściciel” w inboxie.
-- [ ] „Na teraz” = odpowiedz, zanim minie czas SLA (`queue=now`).
-- [ ] Kolory tylko z brandu (`docs/brand/AGENT.md`): czarny = po terminie, żółty = mało czasu, zielony = CTA.
+- [x] „Prowadzi” zamiast „Wisi na” / „Właściciel” w inboxie.
+- [x] „Na teraz” = odpowiedz, zanim minie czas SLA (`queue=now`).
+- [x] Kolory tylko z brandu (`docs/brand/AGENT.md`): czarny = po terminie, żółty = mało czasu, zielony = CTA.
 
 ---
 
