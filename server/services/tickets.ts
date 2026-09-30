@@ -14,6 +14,12 @@ import {
   STATUS_LABELS
 } from '../../shared/domain'
 import { seesAllTickets } from '../../shared/access'
+import {
+  DEPARTMENT_LABELS,
+  isDepartment,
+  resolveDepartment,
+  type Department
+} from '../../shared/departments'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
@@ -30,7 +36,8 @@ export type TicketActor = {
 
 const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
             t.related_transaction_id, t.owner_id, t.subject, t.created_at, t.first_contact_at,
-            t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id`
+            t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id,
+            t.source_category, t.department`
 
 const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
               where e.ticket_id = t.id and e.call_status is not null
@@ -61,6 +68,8 @@ export type TicketRow = {
   call_status?: CallStatus | null
   hubspot_ticket_id?: string | null
   hubspot_thread_id?: string | null
+  source_category?: string | null
+  department?: Department | null
 }
 
 export type EventRow = {
@@ -82,6 +91,7 @@ export async function listTickets(filters: {
   status?: TicketStatus | 'all'
   channel?: Channel | 'all'
   ownerId?: string | 'all' | 'mine' | 'unassigned'
+  department?: Department | 'all'
   page?: number
   pageSize?: number
 }, actor?: TicketActor) {
@@ -99,6 +109,10 @@ export async function listTickets(filters: {
   if (filters.channel && filters.channel !== 'all') {
     params.push(filters.channel)
     clauses.push(`t.origin_channel = $${params.length}`)
+  }
+  if (filters.department && filters.department !== 'all') {
+    params.push(filters.department)
+    clauses.push(`t.department = $${params.length}`)
   }
   if (filters.ownerId === 'unassigned') {
     clauses.push('t.owner_id is null')
@@ -256,9 +270,9 @@ export async function createTicket(input: {
 
   const created = await neonQuery<{ id: string }>(
     `insert into tickets (
-       contact_id, origin_channel, subject, related_transaction_id, owner_id,
+       contact_id, origin_channel, subject, related_transaction_id, owner_id, department,
        first_contact_at, first_agent_reply_at, business_changed_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$6)
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$7)
      returning id`,
     [
       resolved.contact.id,
@@ -266,6 +280,7 @@ export async function createTicket(input: {
       subject,
       relatedTransactionId,
       input.ownerId || null,
+      resolveDepartment(null, null),
       firstContactAt,
       firstAgentReplyAt
     ]
@@ -370,15 +385,20 @@ export async function updateTicket(ticketId: string, input: {
   category?: string | null
   priority?: TicketPriority | null
   relatedTransactionId?: string | null
+  department?: Department
 }, actor?: TicketActor) {
   if (!isUuid(ticketId)) return null
   if (input.ownerId && !isUuid(input.ownerId)) {
     throw new Error('Nieznany właściciel.')
   }
+  if (input.department !== undefined && !isDepartment(input.department)) {
+    throw new Error('Nieznany dział.')
+  }
   const relatedTransactionId = input.relatedTransactionId === undefined
     ? undefined
     : optionalText(input.relatedTransactionId, TEXT_LIMITS.transactionId, 'Numer zlecenia')
   const ownerTouched = Object.hasOwn(input, 'ownerId')
+  const departmentTouched = Object.hasOwn(input, 'department')
   const params: unknown[] = [ticketId]
   const access = accessSql(actor, params)
   const current = await neonQuery<{
@@ -387,8 +407,9 @@ export async function updateTicket(ticketId: string, input: {
     priority: TicketPriority | null
     owner_id: string | null
     origin_channel: Channel
+    department: Department
   }>(
-    `select status, category, priority, owner_id, origin_channel
+    `select status, category, priority, owner_id, origin_channel, department
      from tickets t where t.id = $1::uuid and ${access}`,
     params
   )
@@ -398,6 +419,9 @@ export async function updateTicket(ticketId: string, input: {
   const nextCategory = input.category !== undefined ? input.category : current[0].category
   const nextPriority = input.priority !== undefined ? input.priority : current[0].priority
   const nextOwnerId = ownerTouched ? (input.ownerId ?? null) : current[0].owner_id
+  const nextDepartment = departmentTouched
+    ? (input.department as Department)
+    : current[0].department
 
   if (nextStatus === 'closed') {
     if (!nextCategory || !CATEGORIES.includes(nextCategory as typeof CATEGORIES[number])) {
@@ -415,6 +439,7 @@ export async function updateTicket(ticketId: string, input: {
          category = $4,
          priority = $5,
          related_transaction_id = coalesce($6, related_transaction_id),
+         department = $8,
          closed_at = case when $3 = 'closed' then coalesce(closed_at, now()) else null end,
          business_changed_at = now()
      where id = $1
@@ -426,7 +451,8 @@ export async function updateTicket(ticketId: string, input: {
       nextCategory,
       nextPriority,
       relatedTransactionId ?? null,
-      ownerTouched
+      ownerTouched,
+      nextDepartment
     ]
   )
   if (!updated[0]) return null
@@ -439,13 +465,15 @@ export async function updateTicket(ticketId: string, input: {
       status: current[0].status,
       category: current[0].category,
       priority: current[0].priority,
-      ownerId: current[0].owner_id
+      ownerId: current[0].owner_id,
+      department: current[0].department
     },
     after: {
       status: nextStatus,
       category: nextCategory,
       priority: nextPriority,
-      ownerId: nextOwnerId
+      ownerId: nextOwnerId,
+      department: nextDepartment
     }
   })
 
@@ -482,12 +510,14 @@ async function insertSystemChangeEvents(input: {
     category: string | null
     priority: TicketPriority | null
     ownerId: string | null
+    department: Department
   }
   after: {
     status: TicketStatus
     category: string | null
     priority: TicketPriority | null
     ownerId: string | null
+    department: Department
   }
 }) {
   const lines: string[] = []
@@ -504,6 +534,11 @@ async function insertSystemChangeEvents(input: {
   if (input.before.priority !== input.after.priority) {
     lines.push(
       `Priorytet: ${fieldLabel('priority', input.before.priority)} → ${fieldLabel('priority', input.after.priority)}`
+    )
+  }
+  if (input.before.department !== input.after.department) {
+    lines.push(
+      `Dział: ${DEPARTMENT_LABELS[input.before.department]} → ${DEPARTMENT_LABELS[input.after.department]}`
     )
   }
   if (input.before.ownerId !== input.after.ownerId) {
@@ -589,6 +624,12 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     firstAgentReplyAt: row.first_agent_reply_at ? new Date(row.first_agent_reply_at) : null,
     callStatus
   })
+  const department = (row.department && isDepartment(row.department))
+    ? row.department
+    : resolveDepartment(row.source_category, row.category)
+  const categoryLabel = row.category && row.category in CATEGORY_LABELS
+    ? CATEGORY_LABELS[row.category as typeof CATEGORIES[number]]
+    : (row.source_category || row.category || '—')
   return {
     id: row.id,
     contactId: row.contact_id,
@@ -598,9 +639,14 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     channel: row.origin_channel,
     status: row.status,
     category: row.category,
+    categoryLabel,
+    sourceCategory: row.source_category ?? null,
+    department,
+    departmentLabel: DEPARTMENT_LABELS[department],
     priority: row.priority,
     relatedTransactionId: row.related_transaction_id,
     subject: row.subject,
+    summary: row.subject,
     createdAt: row.created_at,
     firstContactAt: row.first_contact_at,
     firstAgentReplyAt: row.first_agent_reply_at,

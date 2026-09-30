@@ -1,30 +1,36 @@
 <script setup lang="ts">
 import {
-  CHANNEL_LABELS,
-  CHANNELS,
-  STATUS_LABELS,
+  CATEGORY_LABELS,
   type AppRole,
-  type Channel,
   type TicketStatus
 } from '~~/shared/domain'
 import { seesAllTickets } from '~~/shared/access'
+import {
+  DEPARTMENTS,
+  DEPARTMENT_LABELS,
+  hangingSinceLabel,
+  type Department
+} from '~~/shared/departments'
 
 type QueueFilter = 'all' | 'mine' | 'unassigned'
 
 const status = ref<TicketStatus | 'all'>('open')
-const channel = ref<Channel | 'all'>('all')
 const queue = ref<QueueFilter>('all')
+const department = ref<Department | 'all'>('all')
 const page = ref(1)
 
 type TicketsListResponse = {
   tickets: Array<{
     id: string
     subject: string | null
-    status: string
-    channel: string
-    contactName?: string | null
+    summary?: string | null
+    category: string | null
+    categoryLabel?: string | null
+    relatedTransactionId?: string | null
+    department?: Department
+    departmentLabel?: string
     ownerName?: string | null
-    sla: { eligible: boolean, met: boolean | null, exclusion: string | null }
+    firstContactAt: string
     [key: string]: unknown
   }>
   summary: {
@@ -43,13 +49,13 @@ const { data: me } = await useFetch<{ role?: string, agentId?: string | null }>(
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
   query: computed(() => ({
     status: status.value,
-    channel: channel.value,
     ownerId: queue.value,
+    department: department.value,
     page: page.value
   }))
 })
 
-watch([status, channel, queue], () => {
+watch([status, queue, department], () => {
   if (page.value !== 1) {
     page.value = 1
     return
@@ -68,11 +74,6 @@ const statusItems = [
   { label: 'Wszystkie', value: 'all' }
 ]
 
-const channelItems = [
-  { label: 'Wszystkie kanały', value: 'all' },
-  ...CHANNELS.map(value => ({ label: CHANNEL_LABELS[value], value }))
-]
-
 const queueItems = computed(() => {
   const items: Array<{ label: string, value: QueueFilter }> = [
     { label: 'Wszystkie kolejki', value: 'all' },
@@ -84,13 +85,17 @@ const queueItems = computed(() => {
   return items
 })
 
-function slaLabel(ticket: { sla: { eligible: boolean, met: boolean | null, exclusion: string | null } }) {
-  if (!ticket.sla.eligible) {
-    if (ticket.sla.exclusion === 'missing_reply') return 'Czeka na odpowiedź'
-    if (ticket.sla.exclusion === 'off_hours' || ticket.sla.exclusion === 'holiday') return 'Poza pulą'
-    return 'Poza SLA'
+const departmentItems = [
+  { label: 'Wszystkie działy', value: 'all' },
+  ...DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
+]
+
+function categoryText(ticket: TicketsListResponse['tickets'][number]) {
+  if (ticket.categoryLabel) return ticket.categoryLabel
+  if (ticket.category && ticket.category in CATEGORY_LABELS) {
+    return CATEGORY_LABELS[ticket.category as keyof typeof CATEGORY_LABELS]
   }
-  return ticket.sla.met ? 'Spełnione' : 'Przekroczone'
+  return ticket.category || '—'
 }
 
 const pageLabel = computed(() => {
@@ -123,6 +128,12 @@ const pageLabel = computed(() => {
 
     <div class="mt-6 flex flex-wrap gap-3">
       <USelect
+        v-model="department"
+        :items="departmentItems"
+        value-key="value"
+        class="w-52"
+      />
+      <USelect
         v-model="queue"
         :items="queueItems"
         value-key="value"
@@ -133,12 +144,6 @@ const pageLabel = computed(() => {
         :items="statusItems"
         value-key="value"
         class="w-40"
-      />
-      <USelect
-        v-model="channel"
-        :items="channelItems"
-        value-key="value"
-        class="w-52"
       />
     </div>
 
@@ -191,20 +196,23 @@ const pageLabel = computed(() => {
           <table class="w-full text-left text-sm">
             <thead class="text-muted">
               <tr>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Transakcja
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Kategoria
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Dział
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Od kiedy wisi
+                </th>
                 <th class="pb-3 pr-4 font-medium">
-                  Kontakt
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Kanał
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Status
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  SLA
+                  Podsumowanie
                 </th>
                 <th class="pb-3 font-medium whitespace-nowrap">
-                  Właściciel
+                  Wisi na
                 </th>
               </tr>
             </thead>
@@ -214,28 +222,25 @@ const pageLabel = computed(() => {
                 :key="ticket.id"
                 class="border-t border-default"
               >
-                <td class="py-3 pr-4">
+                <td class="py-3 pr-4 whitespace-nowrap">
                   <NuxtLink
                     :to="`/tickets/${ticket.id}`"
                     class="font-medium hover:underline"
                   >
-                    {{ ticket.contactName }}
+                    {{ ticket.relatedTransactionId || '—' }}
                   </NuxtLink>
-                  <p
-                    v-if="ticket.subject"
-                    class="text-muted"
-                  >
-                    {{ ticket.subject }}
-                  </p>
                 </td>
                 <td class="pr-4 whitespace-nowrap">
-                  {{ CHANNEL_LABELS[ticket.channel as Channel] }}
+                  {{ categoryText(ticket) }}
                 </td>
                 <td class="pr-4 whitespace-nowrap">
-                  {{ STATUS_LABELS[ticket.status as TicketStatus] }}
+                  {{ ticket.departmentLabel || '—' }}
                 </td>
                 <td class="pr-4 whitespace-nowrap">
-                  {{ slaLabel(ticket) }}
+                  {{ hangingSinceLabel(ticket.firstContactAt) }}
+                </td>
+                <td class="pr-4 max-w-md truncate">
+                  {{ ticket.summary || ticket.subject || '—' }}
                 </td>
                 <td class="whitespace-nowrap">
                   {{ ticket.ownerName || '—' }}
@@ -243,7 +248,7 @@ const pageLabel = computed(() => {
               </tr>
               <tr v-if="!data?.tickets?.length">
                 <td
-                  colspan="5"
+                  colspan="6"
                   class="py-8 text-center text-muted"
                 >
                   Brak spraw w tym filtrze.
