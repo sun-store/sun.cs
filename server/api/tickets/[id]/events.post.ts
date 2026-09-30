@@ -17,27 +17,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Nieznany status połączenia.' })
   }
   const ticketId = getRouterParam(event, 'id') || ''
-  const actor = { role: user.role, agentId: user.agentId }
+  const actor = { role: user.role, agentId: user.agentId, name: user.name }
   const isCustomerMail = body.channel === 'email' && body.direction === 'to_customer' && body.senderType === 'agent'
-  let mailSent = false
-  if (isCustomerMail) {
-    let outbound
-    try {
-      outbound = await sendTicketMail(ticketId, body.body, actor)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : ''
-      throw createError({
-        statusCode: message.startsWith('Graph') ? 502 : 400,
-        statusMessage: `Mail nie wyszedł, nic nie zapisano. ${message}`.trim()
-      })
-    }
-    if (!outbound) {
-      throw createError({ statusCode: 404, statusMessage: 'Nie ma takiej sprawy.' })
-    }
-    mailSent = outbound.sent
-  }
+
+  // Najpierw zapis na osi (audyt #10), potem wysyłka — żeby klient nie dostał maila bez śladu w sprawie.
+  let ticket
   try {
-    const ticket = await addEvent(ticketId, {
+    ticket = await addEvent(ticketId, {
       channel: body.channel,
       direction: body.direction,
       senderType: body.senderType,
@@ -45,10 +31,6 @@ export default defineEventHandler(async (event) => {
       callStatus: body.callStatus || null,
       externalThreadId: typeof body.externalThreadId === 'string' ? body.externalThreadId : null
     }, actor)
-    if (!ticket) {
-      throw createError({ statusCode: 404, statusMessage: 'Nie ma takiej sprawy.' })
-    }
-    return { ...ticket, mailSent }
   } catch (err) {
     if (err && typeof err === 'object' && 'statusCode' in err) throw err
     throw createError({
@@ -56,4 +38,23 @@ export default defineEventHandler(async (event) => {
       statusMessage: err instanceof Error ? err.message : 'Nie udało się dodać wydarzenia.'
     })
   }
+  if (!ticket) {
+    throw createError({ statusCode: 404, statusMessage: 'Nie ma takiej sprawy.' })
+  }
+
+  let mailSent = false
+  if (isCustomerMail) {
+    try {
+      const outbound = await sendTicketMail(ticketId, body.body, actor)
+      mailSent = Boolean(outbound?.sent)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      throw createError({
+        statusCode: message.startsWith('Graph') ? 502 : 400,
+        statusMessage: `Zapisano w sprawie, ale mail nie wyszedł. ${message}`.trim()
+      })
+    }
+  }
+
+  return { ...ticket, mailSent }
 })

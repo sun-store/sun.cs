@@ -33,12 +33,12 @@ Punkt 1 trzeba poprawić dziś: dotyczy produkcji z danymi klientów. Punkty 2�
 | 2 | Repo publiczne, a w `shared/allowlist.ts` i `.env.example` są maile zespołu z rolami | Gotowa lista celów dla punktu 1 i phishingu | Owner zmienia repo na Private. Lista zespołu tylko w bazie (strona `/team`) i w env | Wysoki |
 | 3 | Każde nowe zdarzenie ustawia status „Czeka”, także wiadomość od klienta | Sprawa, w której klient właśnie odpisał, wygląda na załatwioną. Przy żywym mailu inbox nie pokaże, co wymaga odpowiedzi | Wiadomość klienta → „Otwarta”, odpowiedź agenta → „Czeka na klienta” | Wysoki |
 | 4 | Rola agent zablokowana w `requireUser` | Agenci pierwszej linii nie mogą pracować w aplikacji | Odblokować po punktach 1–3. Zakres agenta (tylko własne sprawy) już jest w SQL | Wysoki |
-| 5 | Brak historii zmian w sprawie (właściciel, status, kategoria) | Nie da się odtworzyć, kto co zmienił. To problem przy QA, sporach i premii liczonej z KPI | Tabela zdarzeń systemowych: kto, co, kiedy | Średni |
+| 5 | Brak historii zmian w sprawie (właściciel, status, kategoria) | Nie da się odtworzyć, kto co zmienił. To problem przy QA, sporach i premii liczonej z KPI | Tabela zdarzeń systemowych: kto, co, kiedy — **zrobione** (`sender_type = system` na osi) | Średni |
 | 6 | Leadzi widzą wszystkie sprawy, reszta tylko własne. Nie ma pojęcia zespołu | Przy wejściu finansów i logistyki albo wszyscy widzą wszystko, albo nikt nie widzi kolejki swojego zespołu | Zespoły i kolejki, dostęp po zespole (patrz „Moduły”) | Średni |
-| 7 | `main` ma niezsynchronizowany `package-lock`, a praca jest na `fix/ci-lockfile` | CI na `main` pada. Nie wiadomo, z której gałęzi wdraża Vercel | Scalić `fix/ci-lockfile` do `main` przez Pull Request po teście maila | Średni |
-| 8 | Nie da się zdjąć właściciela sprawy (SQL `coalesce`) | Sprawa zostaje przypisana do osoby na urlopie | Jawne „nieprzypisana” w API | Niski |
+| 7 | `main` ma niezsynchronizowany `package-lock`, a praca jest na `fix/ci-lockfile` | CI na `main` pada. Nie wiadomo, z której gałęzi wdraża Vercel | Scalić `fix/ci-lockfile` do `main` przez Pull Request po teście maila — lockfile już na `main` (`efe6a7b` / merge) | Średni |
+| 8 | Nie da się zdjąć właściciela sprawy (SQL `coalesce`) | Sprawa zostaje przypisana do osoby na urlopie | Jawne „nieprzypisana” w API — **zrobione** | Niski |
 | 9 | Lista spraw ucina się na 1000 bez stronicowania | Przy ok. 1000 sprawach miesięcznie już po miesiącu część znika z listy | Stronicowanie i domyślny filtr „otwarte” | Niski |
-| 10 | Mail wychodzi przed zapisem w bazie | Jeśli zapis padnie, klient dostał mail, którego nie ma w sprawie | Zapis „wysyłanie” przed wysyłką, potwierdzenie po | Niski |
+| 10 | Mail wychodzi przed zapisem w bazie | Jeśli zapis padnie, klient dostał mail, którego nie ma w sprawie | Zapis „wysyłanie” przed wysyłką, potwierdzenie po — **zrobione** | Niski |
 
 Co jest zrobione dobrze: każdy endpoint ma strażnika (`requireUser` / `requireAdmin` / `requireCron`), zapytania SQL są parametryzowane, dane wejściowe mają limity długości, sekrety zostają na serwerze, a w historii repo nie ma haseł. Zestaw 55 testów, lint i typecheck przechodzą.
 
