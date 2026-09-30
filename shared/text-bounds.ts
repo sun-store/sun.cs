@@ -1,4 +1,8 @@
-export const TICKET_LIST_LIMIT = 1000
+export const TICKET_LIST_PAGE_SIZE = 50
+/** Górny limit pageSize z query (anty-abuse). */
+export const TICKET_LIST_PAGE_SIZE_MAX = 100
+/** @deprecated Używaj stronicowania (`TICKET_LIST_PAGE_SIZE`). Zostawione jako sufit jednej strony. */
+export const TICKET_LIST_LIMIT = TICKET_LIST_PAGE_SIZE_MAX
 
 export const TEXT_LIMITS = {
   body: 100_000,
