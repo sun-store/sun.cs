@@ -5,7 +5,7 @@ alwaysApply: true
 
 Pełne zasady: `AGENTS.md` w katalogu głównym. Skrót:
 
-1. **Każdy handler w `server/api/**` zaczyna się od guarda** (`requireUser` / `requireAdmin` z `server/utils/session.ts`). Endpoint bez guarda = blocker. Wyjątki: `server/api/auth/[...all].ts` oraz `server/api/cron/**` z `requireCron` (`server/utils/cron.ts`).
+1. **Każdy handler w `server/api/**` zaczyna się od guarda** (`requireUser` / `requireAdmin` z `server/utils/session.ts`). Endpoint bez guarda = blocker. Wyjątki: `server/api/auth/[...all].ts`, `server/api/cron/**` z `requireCron` (`server/utils/cron.ts`), oraz `server/api/webhooks/**` z `requireWebhookToken` (`server/utils/webhook.ts`).
 2. **Neon omija RLS.** Zakres wiersza dokłada `accessSql` w `server/services/tickets.ts` (`seesAllTickets`: admin i lead widzą wszystko, agent tylko `owner_id`). Import i inbound nie podają aktora. Handler API zawsze podaje użytkownika z sesji.
 3. **Waliduj input**: `isUuid` z `server/utils/uuid.ts`, limity z `shared/text-bounds.ts`, biała lista pól. Nigdy `...body` do zapisu.
 4. **Zero wklejania inputu w SQL.** Parametry `$1`. Enumy sprawdzaj po `shared/domain.ts`, zanim trafią do zapytania.

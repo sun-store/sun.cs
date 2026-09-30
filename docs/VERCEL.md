@@ -22,6 +22,7 @@ Na dashboardzie teamu (ten z kafelkami):
 | `BETTER_AUTH_SECRET` | to samo co lokalnie |
 | `BETTER_AUTH_URL` | `https://<nazwa>.vercel.app` — uzupełnisz po pierwszym deployu, potem Redeploy |
 | `AUTH_ALLOWLIST` | jak w `.env.example` |
+| `AIRCALL_WEBHOOK_TOKEN` | token z webhooka Aircall (`docs/AIRCALL.md`) |
 | `GOOGLE_CLIENT_ID` | nowy klient OAuth projektu GCP **sun-cs** |
 | `GOOGLE_CLIENT_SECRET` | ten sam klient, skopiowany przy tworzeniu |
 | `LOGISTICS_APP_URL` | `https://sun-logistics.vercel.app` |

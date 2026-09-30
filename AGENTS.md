@@ -8,7 +8,7 @@ Ticketownia Customer Support. Neon (właściciel połączenia, RLS nie działa).
 
 ## Bezpieczeństwo
 
-Każdy handler w `server/api/**` zaczyna się od `requireUser` albo `requireAdmin` (`server/utils/session.ts`). Wyjątki: `server/api/auth/[...all].ts` oraz `server/api/cron/**`, które zaczynają się od `requireCron` (`server/utils/cron.ts`, sekret `CRON_SECRET`).
+Każdy handler w `server/api/**` zaczyna się od `requireUser` albo `requireAdmin` (`server/utils/session.ts`). Wyjątki: `server/api/auth/[...all].ts`, `server/api/cron/**` (`requireCron`), oraz `server/api/webhooks/**` (`requireWebhookToken` / podpis nadawcy).
 
 Konto powstaje tylko dla firmowego maila, który jest na allowliście. Agenci nie wchodzą, dopóki `requireUser` ich nie wpuszcza.
 
