@@ -5,6 +5,7 @@ Ticketownia Customer Support sun.store: e-mail, WhatsApp, telefon i sprawy agent
 Brand kit (draft v3): [docs/brand/AGENT.md](docs/brand/AGENT.md).
 
 Umowa produktowa: [docs/wymagania-kpi.md](docs/wymagania-kpi.md).
+Audyt i docelowy kształt (30.09.2026): [docs/audyt-i-ksztalt.md](docs/audyt-i-ksztalt.md).
 
 ## Start
 
