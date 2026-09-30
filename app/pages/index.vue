@@ -92,7 +92,7 @@ const pageLabel = computed(() => {
           Tickety
         </h1>
         <p class="mt-1 text-sm text-muted">
-          Otwarte {{ data?.summary.open ?? 0 }}
+          Niezamknięte {{ data?.summary.open ?? 0 }}
           · w puli SLA {{ data?.summary.slaEligible ?? 0 }}
           · spełnione {{ data?.summary.slaMet ?? 0 }}
         </p>
@@ -131,65 +131,75 @@ const pageLabel = computed(() => {
       Ładowanie…
     </div>
 
-    <UCard
-      v-else
-      class="mt-6"
-    >
-      <table class="w-full text-left text-sm">
-        <thead class="text-muted">
-          <tr>
-            <th class="pb-3 font-medium">
-              Kontakt
-            </th>
-            <th class="pb-3 font-medium">
-              Kanał
-            </th>
-            <th class="pb-3 font-medium">
-              Status
-            </th>
-            <th class="pb-3 font-medium">
-              SLA
-            </th>
-            <th class="pb-3 font-medium">
-              Właściciel
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="ticket in data?.tickets || []"
-            :key="ticket.id"
-            class="border-t border-default"
-          >
-            <td class="py-3">
-              <NuxtLink
-                :to="`/tickets/${ticket.id}`"
-                class="font-medium hover:underline"
+    <template v-else>
+      <UCard class="mt-6">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="text-muted">
+              <tr>
+                <th class="pb-3 pr-4 font-medium">
+                  Kontakt
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Kanał
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  Status
+                </th>
+                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                  SLA
+                </th>
+                <th class="pb-3 font-medium whitespace-nowrap">
+                  Właściciel
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="ticket in data?.tickets || []"
+                :key="ticket.id"
+                class="border-t border-default"
               >
-                {{ ticket.contactName }}
-              </NuxtLink>
-              <p
-                v-if="ticket.subject"
-                class="text-muted"
-              >
-                {{ ticket.subject }}
-              </p>
-            </td>
-            <td>{{ CHANNEL_LABELS[ticket.channel as Channel] }}</td>
-            <td>{{ STATUS_LABELS[ticket.status as TicketStatus] }}</td>
-            <td>{{ slaLabel(ticket) }}</td>
-            <td>{{ ticket.ownerName || '—' }}</td>
-          </tr>
-          <tr v-if="!data?.tickets?.length">
-            <td
-              colspan="5"
-              class="py-8 text-center text-muted"
-            >
-              Brak spraw w tym filtrze.
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                <td class="py-3 pr-4">
+                  <NuxtLink
+                    :to="`/tickets/${ticket.id}`"
+                    class="font-medium hover:underline"
+                  >
+                    {{ ticket.contactName }}
+                  </NuxtLink>
+                  <p
+                    v-if="ticket.subject"
+                    class="text-muted"
+                  >
+                    {{ ticket.subject }}
+                  </p>
+                </td>
+                <td class="pr-4 whitespace-nowrap">
+                  {{ CHANNEL_LABELS[ticket.channel as Channel] }}
+                </td>
+                <td class="pr-4 whitespace-nowrap">
+                  {{ STATUS_LABELS[ticket.status as TicketStatus] }}
+                </td>
+                <td class="pr-4 whitespace-nowrap">
+                  {{ slaLabel(ticket) }}
+                </td>
+                <td class="whitespace-nowrap">
+                  {{ ticket.ownerName || '—' }}
+                </td>
+              </tr>
+              <tr v-if="!data?.tickets?.length">
+                <td
+                  colspan="5"
+                  class="py-8 text-center text-muted"
+                >
+                  Brak spraw w tym filtrze.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </UCard>
+
       <div
         v-if="data"
         class="mt-4 flex flex-wrap items-center justify-between gap-3"
@@ -218,6 +228,6 @@ const pageLabel = computed(() => {
           </UButton>
         </div>
       </div>
-    </UCard>
+    </template>
   </div>
 </template>
