@@ -10,13 +10,11 @@ import {
 import { canBrowseAllDepartments, defaultDepartmentFilter } from '~~/shared/access'
 import {
   DEPARTMENTS,
-  DEPARTMENT_LABELS,
   hangingSinceLabel,
   type Department
 } from '~~/shared/departments'
 import {
   QUEUES,
-  QUEUE_LABELS,
   type QueueKey
 } from '~~/shared/queues'
 import {
@@ -24,6 +22,8 @@ import {
   shortTransactionId
 } from '~~/shared/reply-due-label'
 import type { SlaBadge } from '~~/shared/sla-label'
+
+const { t, locale, messages } = useAppLocale()
 
 const workQueue = ref<QueueKey>('now')
 const status = ref<TicketStatus | 'all'>('all')
@@ -45,6 +45,7 @@ type TicketListItem = {
   category: string | null
   categoryLabel?: string | null
   sourceCategory?: string | null
+  topicLabel?: string | null
   relatedTransactionId?: string | null
   department?: Department
   departmentLabel?: string
@@ -146,6 +147,8 @@ type TicketPanelDetail = {
   contact?: { display_name?: string | null, customer_role?: string | null } | null
   relatedTransactionId?: string | null
   categoryLabel?: string | null
+  topicLabel?: string | null
+  nextStep?: string | null
   sourceCategory?: string | null
   category?: string | null
   department?: Department | null
@@ -301,7 +304,7 @@ watch(() => panelTicket.value?.department, () => {
 })
 
 const ownerItems = computed(() => [
-  { label: 'nieprzypisana', value: 'unassigned' as const },
+  { label: t('inbox', 'unassigned'), value: 'unassigned' as const },
   ...(agentsData.value || []).map(agent => ({
     label: agent.display_name,
     value: agent.id
@@ -480,10 +483,56 @@ watch(selectedId, (id) => {
   }
 })
 
-const departmentSelectItems = DEPARTMENTS.map(value => ({
-  label: DEPARTMENT_LABELS[value],
-  value
-}))
+const translatedBodies = ref<Record<string, string>>({})
+const showOriginal = ref(false)
+const translating = ref(false)
+
+async function autoTranslatePanel() {
+  if (!aiEnabled.value || !panelTicket.value?.events?.length) {
+    translatedBodies.value = {}
+    return
+  }
+  const texts = panelEvents.value
+    .map(event => event.body || '')
+    .filter(Boolean)
+  if (!texts.length) {
+    translatedBodies.value = {}
+    return
+  }
+  translating.value = true
+  try {
+    const res = await $fetch<{ results: Array<{ text: string }> }>('/api/translate', {
+      method: 'POST',
+      body: {
+        texts,
+        targetLocale: locale.value
+      }
+    })
+    const map: Record<string, string> = {}
+    panelEvents.value.forEach((event, index) => {
+      if (event.body && res.results[index]?.text) {
+        map[event.id] = res.results[index]!.text
+      }
+    })
+    translatedBodies.value = map
+  } catch {
+    translatedBodies.value = {}
+  } finally {
+    translating.value = false
+  }
+}
+
+watch([locale, panelEvents, aiEnabled], () => {
+  showOriginal.value = false
+  autoTranslatePanel()
+})
+
+const departmentSelectItems = computed(() =>
+  DEPARTMENTS.map(value => ({
+    label: messages.value.departments[value],
+    value
+  }))
+)
 
 const browseAllDepartments = computed(() =>
   Boolean(me.value?.role && canBrowseAllDepartments(me.value.role, me.value.department))
@@ -492,23 +541,25 @@ const browseAllDepartments = computed(() =>
 const departmentItems = computed(() => {
   if (browseAllDepartments.value) {
     return [
-      { label: 'Wszystkie działy', value: 'all' as const },
-      ...DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
+      { label: t('inbox', 'allDepartments'), value: 'all' as const },
+      ...DEPARTMENTS.map(value => ({ label: messages.value.departments[value], value }))
     ]
   }
   const own = me.value?.department || 'cs'
-  return [{ label: DEPARTMENT_LABELS[own], value: own }]
+  return [{ label: messages.value.departments[own], value: own }]
 })
 
 const queueNav = computed(() =>
   QUEUES.map(id => ({
     id,
-    label: QUEUE_LABELS[id],
+    label: messages.value.queues[id],
     count: countsData.value?.counts?.[id] ?? 0
   }))
 )
 
 function categoryText(ticket: TicketListItem) {
+  // Temat z tagu HubSpot albo z treści (shared/ticket-topic.ts) — zamiast „Other” / „Inne”.
+  if (typeof ticket.topicLabel === 'string' && ticket.topicLabel) return ticket.topicLabel
   if (ticket.categoryLabel && ticket.categoryLabel !== '—') {
     const first = ticket.categoryLabel.split(' · ')[0]?.trim()
     if (first) return first
@@ -545,7 +596,7 @@ function slaClass(tone: string) {
 }
 
 function ownerLabel(ticket: TicketListItem) {
-  return ticket.ownerName?.trim() || 'nieprzypisana'
+  return ticket.ownerName?.trim() || t('inbox', 'unassigned')
 }
 
 function ownerInitials(ticket: TicketListItem) {
@@ -560,10 +611,12 @@ function ownerInitials(ticket: TicketListItem) {
 const pageLabel = computed(() => {
   if (!data.value) return ''
   const { page: p, totalPages, total, pageSize } = data.value
-  if (total === 0) return '0 spraw'
+  if (total === 0) return locale.value === 'en' ? '0 cases' : '0 spraw'
   const from = (p - 1) * pageSize + 1
   const to = Math.min(p * pageSize, total)
-  return `${from}–${to} z ${total} · strona ${p}/${totalPages}`
+  return locale.value === 'en'
+    ? `${from}–${to} of ${total} · page ${p}/${totalPages}`
+    : `${from}–${to} z ${total} · strona ${p}/${totalPages}`
 })
 </script>
 
@@ -572,25 +625,28 @@ const pageLabel = computed(() => {
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-2xl font-medium tracking-tight">
-          Tickety
+          {{ t('inbox', 'title') }}
         </h1>
         <p class="mt-1 text-sm text-muted">
-          Niezamknięte {{ data?.summary.open ?? 0 }}
-          · w puli SLA {{ data?.summary.slaEligible ?? 0 }}
-          · spełnione {{ data?.summary.slaMet ?? 0 }}
+          {{ t('inbox', 'openSummary') }} {{ data?.summary.open ?? 0 }}
+          · {{ t('inbox', 'slaPool') }} {{ data?.summary.slaEligible ?? 0 }}
+          · {{ t('inbox', 'slaMet') }} {{ data?.summary.slaMet ?? 0 }}
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
         <UButton
           color="neutral"
           variant="outline"
-          :disabled="pending || !(data?.tickets?.length)"
+          :disabled="pending"
+          :title="locale === 'en'
+            ? 'Opens the case that most urgently needs a reply (closest to the SLA deadline or longest overdue) and assigns it to you if nobody owns it.'
+            : 'Otwiera sprawę, na którą najpilniej trzeba odpowiedzieć (najbliżej końca SLA albo najdłużej po terminie), i przypisuje ją do Ciebie, jeśli nikt jej nie prowadzi.'"
           @click="takeNext"
         >
-          Weź następną
+          {{ t('inbox', 'takeNext') }}
         </UButton>
         <UButton to="/tickets/new">
-          Nowa sprawa
+          {{ t('nav', 'newCase') }}
         </UButton>
       </div>
     </div>
@@ -608,7 +664,7 @@ const pageLabel = computed(() => {
       >
         <UInput
           v-model="searchInput"
-          placeholder="Szukaj: transakcja, mail, nazwa, treść…"
+          :placeholder="t('inbox', 'searchPlaceholder')"
           class="min-w-[14rem] flex-1"
         />
         <UButton
@@ -616,7 +672,7 @@ const pageLabel = computed(() => {
           color="neutral"
           variant="outline"
         >
-          Szukaj
+          {{ t('inbox', 'search') }}
         </UButton>
         <UButton
           v-if="searchQ"
@@ -625,7 +681,7 @@ const pageLabel = computed(() => {
           variant="ghost"
           @click="clearSearch"
         >
-          Wyczyść
+          {{ t('inbox', 'clear') }}
         </UButton>
       </form>
     </div>
@@ -641,7 +697,7 @@ const pageLabel = computed(() => {
       v-else-if="pending && !data"
       class="mt-6 text-sm text-muted"
     >
-      Ładowanie…
+      {{ t('inbox', 'loading') }}
     </div>
 
     <div
@@ -652,6 +708,9 @@ const pageLabel = computed(() => {
         v-if="!searchQ"
         class="w-full shrink-0 min-[1100px]:w-56"
       >
+        <p class="mb-2 px-3 text-xs font-medium text-[#727487]">
+          {{ t('inbox', 'myWork') }}
+        </p>
         <ul class="space-y-1">
           <li
             v-for="item in queueNav"
@@ -683,7 +742,7 @@ const pageLabel = computed(() => {
           class="flex flex-wrap items-center justify-between gap-3"
         >
           <p class="text-sm text-muted">
-            <span v-if="searchQ">Wyniki dla „{{ searchQ }}” · </span>
+            <span v-if="searchQ">{{ t('inbox', 'resultsFor') }} „{{ searchQ }}” · </span>
             {{ pageLabel }}
           </p>
           <div class="flex gap-2">
@@ -694,7 +753,7 @@ const pageLabel = computed(() => {
               :disabled="page <= 1 || pending"
               @click="page -= 1"
             >
-              Poprzednia
+              {{ t('inbox', 'prev') }}
             </UButton>
             <UButton
               color="neutral"
@@ -703,7 +762,7 @@ const pageLabel = computed(() => {
               :disabled="page >= (data.totalPages || 1) || pending"
               @click="page += 1"
             >
-              Następna
+              {{ t('inbox', 'next') }}
             </UButton>
           </div>
         </div>
@@ -714,25 +773,25 @@ const pageLabel = computed(() => {
               <thead class="text-muted">
                 <tr>
                   <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                    SLA
+                    {{ t('columns', 'sla') }}
                   </th>
                   <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                    Transakcja
+                    {{ t('columns', 'transaction') }}
                   </th>
                   <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                    Kategoria
+                    {{ t('columns', 'category') }}
                   </th>
                   <th class="pb-3 pr-4 font-medium">
-                    Podsumowanie
+                    {{ t('columns', 'summary') }}
                   </th>
                   <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                    Dział
+                    {{ t('columns', 'department') }}
                   </th>
                   <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                    Prowadzi
+                    {{ t('columns', 'owner') }}
                   </th>
                   <th class="pb-3 font-medium whitespace-nowrap">
-                    Od kiedy
+                    {{ t('columns', 'since') }}
                   </th>
                 </tr>
               </thead>
@@ -753,10 +812,10 @@ const pageLabel = computed(() => {
                   <td class="pr-4 whitespace-nowrap font-medium">
                     {{ shortTransactionId(ticket.relatedTransactionId) }}
                   </td>
-                  <td class="pr-4 whitespace-nowrap">
+                  <td class="pr-4">
                     {{ categoryText(ticket) }}
                   </td>
-                  <td class="pr-4 max-w-md">
+                  <td class="pr-4 min-w-[18rem]">
                     <p class="line-clamp-2">
                       {{ summaryText(ticket) }}
                     </p>
@@ -790,7 +849,7 @@ const pageLabel = computed(() => {
                     colspan="7"
                     class="py-8 text-center text-muted"
                   >
-                    {{ searchQ ? 'Brak wyników.' : 'Brak spraw w tej kolejce.' }}
+                    {{ searchQ ? t('inbox', 'emptySearch') : t('inbox', 'emptyQueue') }}
                   </td>
                 </tr>
               </tbody>
@@ -807,13 +866,25 @@ const pageLabel = computed(() => {
           <div>
             <p class="text-xs text-muted">
               {{ shortTransactionId(panelTicket?.relatedTransactionId) }}
-              · {{ panelTicket?.categoryLabel || panelTicket?.sourceCategory || panelTicket?.category || '—' }}
+              · {{ panelTicket?.topicLabel || panelTicket?.categoryLabel || panelTicket?.sourceCategory || panelTicket?.category || '—' }}
+            </p>
+            <p
+              v-if="panelTicket?.categoryLabel && panelTicket.categoryLabel !== panelTicket.topicLabel"
+              class="text-xs text-muted"
+            >
+              HubSpot: {{ panelTicket.categoryLabel }}
             </p>
             <p
               class="mt-1 text-sm"
               :class="slaClass(slaFor({ awaiting: panelTicket?.awaiting, replyDueAt: panelTicket?.replyDueAt }).tone)"
             >
               {{ slaFor({ awaiting: panelTicket?.awaiting, replyDueAt: panelTicket?.replyDueAt }).text }}
+            </p>
+            <p
+              v-if="panelTicket?.nextStep"
+              class="mt-2 text-sm"
+            >
+              <span class="font-medium">Następny krok:</span> {{ panelTicket.nextStep }}
             </p>
           </div>
           <div class="flex gap-1">
@@ -823,7 +894,7 @@ const pageLabel = computed(() => {
               variant="ghost"
               size="sm"
             >
-              Pełna
+              {{ t('inbox', 'fullCase') }}
             </UButton>
             <UButton
               color="neutral"
@@ -831,7 +902,7 @@ const pageLabel = computed(() => {
               size="sm"
               @click="closePanel"
             >
-              Zamknij
+              {{ t('inbox', 'close') }}
             </UButton>
           </div>
         </div>
@@ -840,7 +911,7 @@ const pageLabel = computed(() => {
           v-if="panelPending"
           class="mt-4 text-sm text-muted"
         >
-          Ładowanie sprawy…
+          {{ t('inbox', 'loadingCase') }}
         </p>
         <p
           v-else-if="panelError"
@@ -854,12 +925,12 @@ const pageLabel = computed(() => {
           </h2>
           <p class="mt-1 text-sm text-muted">
             {{ panelTicket.departmentLabel || '—' }}
-            · {{ panelTicket.ownerName || 'nieprzypisana' }}
-            · od {{ panelTicket.firstContactAt ? hangingSinceLabel(panelTicket.firstContactAt) : '—' }}
+            · {{ panelTicket.ownerName || t('inbox', 'unassigned') }}
+            · {{ panelTicket.firstContactAt ? hangingSinceLabel(panelTicket.firstContactAt) : '—' }}
           </p>
 
           <div class="mt-4 space-y-3">
-            <UFormField label="Dział">
+            <UFormField :label="t('inbox', 'department')">
               <div class="flex gap-2">
                 <USelect
                   v-model="migrateDepartment"
@@ -875,7 +946,7 @@ const pageLabel = computed(() => {
                   :disabled="migrateDepartment === panelTicket.department"
                   @click="saveDepartment"
                 >
-                  Przenieś
+                  {{ t('inbox', 'transfer') }}
                 </UButton>
               </div>
             </UFormField>
@@ -885,7 +956,7 @@ const pageLabel = computed(() => {
             >
               {{ migrateError }}
             </p>
-            <UFormField label="Prowadzi">
+            <UFormField :label="t('inbox', 'leads')">
               <div class="flex gap-2">
                 <USelect
                   v-model="panelOwnerId"
@@ -901,7 +972,7 @@ const pageLabel = computed(() => {
                   :disabled="panelOwnerId === (panelTicket.ownerId || 'unassigned')"
                   @click="saveOwner"
                 >
-                  Zapisz
+                  {{ t('inbox', 'save') }}
                 </UButton>
               </div>
             </UFormField>
@@ -916,7 +987,7 @@ const pageLabel = computed(() => {
           <div class="mt-5 rounded-md bg-[#F8F8F8] p-3">
             <div class="flex items-center justify-between gap-2">
               <p class="text-xs font-medium">
-                Sun Agent · Podsumowanie
+                {{ t('inbox', 'sunAgent') }}
               </p>
               <UButton
                 v-if="aiEnabled"
@@ -926,37 +997,37 @@ const pageLabel = computed(() => {
                 :loading="aiBusy"
                 @click="loadSummary"
               >
-                Odśwież
+                {{ t('inbox', 'refresh') }}
               </UButton>
             </div>
             <p
               v-if="!aiEnabled"
               class="mt-2 text-sm text-[#727487]"
             >
-              Brak klucza AI — ustaw ANTHROPIC_API_KEY lub OPENAI_API_KEY.
+              {{ t('inbox', 'noAi') }}
             </p>
             <template v-else>
               <p class="mt-2 text-sm">
-                {{ panelTicket.aiSummary || 'Brak podsumowania — kliknij Odśwież.' }}
+                {{ panelTicket.aiSummary || t('inbox', 'noSummary') }}
               </p>
               <p
                 v-if="panelTicket.aiNeed"
                 class="mt-2 text-sm text-[#727487]"
               >
-                Czego potrzebuje: {{ panelTicket.aiNeed }}
+                {{ t('inbox', 'needs') }}: {{ panelTicket.aiNeed }}
               </p>
               <p
                 v-if="panelTicket.aiNextStep"
                 class="mt-1 text-sm text-[#727487]"
               >
-                Następny krok: {{ panelTicket.aiNextStep }}
+                {{ t('inbox', 'nextStep') }}: {{ panelTicket.aiNextStep }}
               </p>
               <div
                 v-if="draftText"
                 class="mt-3 rounded-md border border-default bg-white p-3 text-sm"
               >
                 <p class="text-xs font-medium text-muted">
-                  Propozycja odpowiedzi
+                  {{ t('inbox', 'draftTitle') }}
                 </p>
                 <p class="mt-1 whitespace-pre-wrap">
                   {{ draftText }}
@@ -965,14 +1036,14 @@ const pageLabel = computed(() => {
                   v-if="draftNeedsReview"
                   class="mt-1 text-xs text-[#727487]"
                 >
-                  Sprawdź przed wysłaniem (płatności / faktury / spory).
+                  {{ t('inbox', 'reviewBeforeSend') }}
                 </p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   <UButton
                     size="sm"
                     @click="insertDraft"
                   >
-                    Wstaw do odpowiedzi
+                    {{ t('inbox', 'insertDraft') }}
                   </UButton>
                   <UButton
                     color="neutral"
@@ -981,7 +1052,7 @@ const pageLabel = computed(() => {
                     :loading="aiBusy"
                     @click="loadDraft('short')"
                   >
-                    Krócej
+                    {{ t('inbox', 'shorter') }}
                   </UButton>
                 </div>
               </div>
@@ -994,7 +1065,7 @@ const pageLabel = computed(() => {
                 :loading="aiBusy"
                 @click="loadDraft('normal')"
               >
-                Zaproponuj odpowiedź
+                {{ t('inbox', 'proposeReply') }}
               </UButton>
               <p
                 v-if="aiError"
@@ -1006,9 +1077,24 @@ const pageLabel = computed(() => {
           </div>
 
           <div class="mt-5">
-            <p class="text-xs font-medium text-muted">
-              Ostatnie zdarzenia
-            </p>
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-xs font-medium text-muted">
+                {{ t('inbox', 'recentEvents') }}
+                <span
+                  v-if="translating"
+                  class="ms-2 text-[#727487]"
+                >{{ t('translate', 'translating') }}</span>
+              </p>
+              <UButton
+                v-if="Object.keys(translatedBodies).length"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                @click="showOriginal = !showOriginal"
+              >
+                {{ showOriginal ? t('translate', 'showTranslation') : t('translate', 'showOriginal') }}
+              </UButton>
+            </div>
             <ol class="mt-2 space-y-3">
               <li
                 v-for="event in panelEvents"
@@ -1017,24 +1103,24 @@ const pageLabel = computed(() => {
               >
                 <p class="text-xs text-muted">
                   {{ event.senderType }}
-                  · {{ new Date(event.createdAt).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }) }}
+                  · {{ new Date(event.createdAt).toLocaleString(locale === 'en' ? 'en-GB' : 'pl-PL', { timeZone: 'Europe/Warsaw' }) }}
                 </p>
                 <p class="mt-1 line-clamp-4 whitespace-pre-wrap">
-                  {{ event.body }}
+                  {{ showOriginal ? event.body : (translatedBodies[event.id] || event.body) }}
                 </p>
               </li>
               <li
                 v-if="!panelEvents.length"
                 class="text-sm text-muted"
               >
-                Brak zdarzeń.
+                {{ t('inbox', 'noEvents') }}
               </li>
             </ol>
             <NuxtLink
               :to="`/tickets/${selectedId}`"
               class="mt-2 inline-block text-sm hover:underline"
             >
-              Pokaż całą rozmowę ({{ panelTicket.events?.length || 0 }})
+              {{ t('inbox', 'showThread') }} ({{ panelTicket.events?.length || 0 }})
             </NuxtLink>
           </div>
 
@@ -1046,7 +1132,7 @@ const pageLabel = computed(() => {
             <UTextarea
               v-model="replyBody"
               :rows="4"
-              placeholder="Odpowiedź do klienta…"
+              :placeholder="t('inbox', 'replyPlaceholder')"
             />
             <p
               v-if="replyError"
@@ -1060,7 +1146,7 @@ const pageLabel = computed(() => {
                 :loading="sending"
                 :disabled="!replyBody.trim()"
               >
-                Wyślij
+                {{ t('inbox', 'send') }}
               </UButton>
             </div>
           </form>
@@ -1070,7 +1156,7 @@ const pageLabel = computed(() => {
             class="mt-5 space-y-2 border-t border-default pt-4"
           >
             <p class="text-xs font-medium text-muted">
-              Zamknij sprawę
+              {{ t('inbox', 'closeCase') }}
             </p>
             <div class="flex flex-wrap gap-2">
               <USelect
@@ -1091,7 +1177,7 @@ const pageLabel = computed(() => {
                 :loading="closing"
                 @click="closePanelTicket"
               >
-                Zamknij sprawę
+                {{ t('inbox', 'closeCase') }}
               </UButton>
             </div>
             <p

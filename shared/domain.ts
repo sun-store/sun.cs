@@ -81,6 +81,10 @@ export const HUBSPOT_TICKET_CATEGORIES = [
   'Offer request',
   'Unresponsive seller',
   'Stripe Payment Issue',
+  'Invoices',
+  'Data Change',
+  'Bug',
+  'Feature Request',
   'Spam',
   'Other'
 ] as const

@@ -22,7 +22,8 @@ function listBqTicketFiles() {
     .map(name => resolve(dir, name))
 }
 const BOT_OWNER_IDS = new Set(['34396953', '30675564'])
-const BOT_EMAIL_RE = /aichatbot|customer agent|sunstore agent/i
+// Sun Agent (sun.agent@sun.store) to bot: jego sprawy mają trafić do „Nieprzypisane”, żeby wziął je człowiek.
+const BOT_EMAIL_RE = /aichatbot|customer agent|sunstore agent|sun\.agent@/i
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
 const TX_RE = /(?:sun\.store\/(?:[a-z]{2}\/)?transaction\/|transaction\s*#\s*)([A-Za-z0-9]{8})/i
 const HS_TICKET_RE = /logged ticket\s+(\d{8,})|ticket[:\s#]+(\d{10,})/i
@@ -155,7 +156,10 @@ function isBotOwner(owner) {
 }
 
 function loadOwners() {
-  const rows = JSON.parse(readFileSync(resolve(CS_JULY, 'node/owners.json'), 'utf8'))
+  // Świeża lista z BigQuery (npm run db:pull-bq) wygrywa ze starym zrzutem z lipca.
+  const fresh = resolve(CS_JULY, 'bq_raw/owners.json')
+  const path = existsSync(fresh) ? fresh : resolve(CS_JULY, 'node/owners.json')
+  const rows = JSON.parse(readFileSync(path, 'utf8'))
   return new Map(rows.map(row => [String(row.id), row]))
 }
 
@@ -390,6 +394,7 @@ async function main() {
   const stats = {
     ticketsInserted: 0,
     ticketsSkipped: 0,
+    ticketsUpdated: 0,
     threadsInserted: 0,
     threadsMerged: 0,
     threadsSkipped: 0,
@@ -416,7 +421,31 @@ async function main() {
 
     for (const [index, row] of tickets.entries()) {
       if (byHsTicket.has(String(row.id))) {
-        stats.ticketsSkipped++
+        // Równoległa praca: HubSpot jest źródłem prawdy. Uzupełniamy braki (właściciel, kategoria)
+        // i zamykamy sprawy zamknięte w HubSpocie; nic, co ktoś ustawił w sun.support, nie jest nadpisywane.
+        const existing = byHsTicket.get(String(row.id))
+        const isClosedHs = row.is_closed === true || row.is_closed === 'true'
+        const closedHs = msToDate(row.closed_ms) || msToDate(row.last_closed_ms)
+        const ownerHs = row.owner_id ? agentCache.get(String(row.owner_id)) || null : null
+        const result = await client.query(
+          `update tickets set
+             owner_id = coalesce(owner_id, $2::uuid),
+             source_category = coalesce(source_category, $3),
+             status = case when $4 and status <> 'closed' then 'closed' else status end,
+             closed_at = case when $4 and status <> 'closed' then coalesce($5, now()) else closed_at end,
+             business_changed_at = case
+               when ($4 and status <> 'closed') or (owner_id is null and $2::uuid is not null) then now()
+               else business_changed_at end
+           where id = $1
+             and (
+               (owner_id is null and $2::uuid is not null)
+               or (source_category is null and $3::text is not null)
+               or ($4 and status <> 'closed')
+             )`,
+          [existing.id, ownerHs, row.category ? String(row.category).trim() : null, isClosedHs, closedHs]
+        )
+        if (result.rowCount) stats.ticketsUpdated++
+        else stats.ticketsSkipped++
         continue
       }
       const created = msToDate(row.create_ms) || new Date()

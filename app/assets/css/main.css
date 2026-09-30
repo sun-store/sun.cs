@@ -26,7 +26,13 @@
 }
 
 @theme static {
-  --font-sans: 'Aeonik', 'Inter', 'DM Sans', sans-serif;
+  /*
+   * Tekst roboczy: Inter (zaprojektowany pod ekran: wysoka x-height, równe cyfry w tabelach).
+   * Aeonik tylko w logo i nagłówkach — przy 13–14 px w gęstej tabeli czyta się gorzej.
+   * Inter pobiera @nuxt/fonts przy buildzie (self-hosting, bez zapytań do Google u użytkownika).
+   */
+  --font-sans: 'Inter', 'Aeonik', system-ui, sans-serif;
+  --font-display: 'Aeonik', 'Inter', system-ui, sans-serif;
 
   /* sun.support palette — green is the only accent scale */
   --color-green-50: #EAF9F1;
@@ -78,16 +84,27 @@
 
 body {
   font-family: var(--font-sans);
+  font-size: 15px;
   color: var(--sun-black);
   background: var(--sun-white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
 h2,
 h3,
 h4 {
+  font-family: var(--font-display);
   font-weight: 500;
   line-height: 1.15;
+}
+
+/* Kolumny liczb i czasów nie „skaczą” przy odświeżaniu. */
+table,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 p,

@@ -150,7 +150,18 @@ async function main() {
     ORDER BY record_id
   `)
 
+  // Aktualna lista właścicieli: bez niej nowe osoby (np. zatrudnione po lipcu) lądują jako „nieprzypisane”.
+  const ownerRows = await queryAll(bq, `
+    SELECT CAST(id AS STRING) AS id, email, firstName, lastName
+    FROM \`sun-store-bq.hubspot.owners\`
+    UNION ALL
+    SELECT CAST(id AS STRING) AS id, email, firstName, lastName
+    FROM \`sun-store-bq.hubspot.owners_archived\`
+  `)
+
   mkdirSync(OUT_DIR, { recursive: true })
+  const ownersPath = resolve(OUT_DIR, 'owners.json')
+  writeFileSync(ownersPath, JSON.stringify(ownerRows))
   const tag = stamp(new Date())
   const ticketsPath = resolve(OUT_DIR, `tickets_delta7_${tag}.json`)
   const dealsPath = resolve(OUT_DIR, `deals_delta7_${tag}.json`)
@@ -161,6 +172,8 @@ async function main() {
     since,
     tickets: ticketRows.length,
     deals: dealRows.length,
+    owners: ownerRows.length,
+    ownersPath,
     ticketsPath,
     dealsPath
   }, null, 2))

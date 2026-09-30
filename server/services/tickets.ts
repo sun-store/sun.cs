@@ -28,6 +28,7 @@ import { slaBadge } from '../../shared/sla-label'
 import { nextState } from '../../shared/ticket-state'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
+import { ticketTopic, TOPIC_LABELS, TOPIC_NEXT_STEP } from '../../shared/ticket-topic'
 import { isUuid } from '../utils/uuid'
 import { getNeonPool, neonQuery } from './neon-db'
 import { resolveContact } from './contacts'
@@ -46,6 +47,11 @@ const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.catego
             t.source_category, t.department, t.awaiting, t.reply_due_at,
             t.last_customer_at, t.last_event_at,
             t.ai_summary, t.ai_need, t.ai_next_step, t.ai_summary_at, t.ai_summary_event_at`
+
+/** Początek pierwszej wiadomości klienta — do tematu sprawy (shared/ticket-topic.ts). */
+const FIRST_CUSTOMER_TEXT_SQL = `(select left(e.body, 600) from ticket_events e
+              where e.ticket_id = t.id and e.sender_type = 'customer'
+              order by e.created_at asc limit 1)`
 
 const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
               where e.ticket_id = t.id and e.call_status is not null
@@ -89,6 +95,7 @@ export type TicketRow = {
   ai_next_step?: string | null
   ai_summary_at?: Date | null
   ai_summary_event_at?: Date | null
+  first_customer_text?: string | null
 }
 
 export type EventRow = {
@@ -248,7 +255,8 @@ export async function listTickets(filters: {
     : orderSqlForQueue(filters.queue)
   const rows = await neonQuery<TicketRow>(
     `select ${TICKET_COLUMNS}, c.display_name as contact_name, a.display_name as owner_name,
-            ${CALL_STATUS_SQL} as call_status
+            ${CALL_STATUS_SQL} as call_status,
+            ${FIRST_CUSTOMER_TEXT_SQL} as first_customer_text
      from tickets t
      join contacts c on c.id = t.contact_id
      left join agents a on a.id = t.owner_id
@@ -878,6 +886,13 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     : (row.category && row.category in CATEGORY_LABELS
         ? CATEGORY_LABELS[row.category as typeof CATEGORIES[number]]
         : (row.category || '—'))
+  const topic = ticketTopic({
+    sourceCategory: row.source_category,
+    subject: row.subject,
+    text: row.first_customer_text
+      ?? events.find(event => event.sender_type === 'customer')?.body
+      ?? null
+  })
   return {
     id: row.id,
     contactId: row.contact_id,
@@ -888,6 +903,9 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     status: row.status,
     category: row.category,
     categoryLabel,
+    topic,
+    topicLabel: TOPIC_LABELS[topic],
+    nextStep: row.ai_next_step?.trim() || TOPIC_NEXT_STEP[topic],
     sourceCategory: row.source_category ?? null,
     department,
     departmentLabel: DEPARTMENT_LABELS[department],

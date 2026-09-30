@@ -8,7 +8,10 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ queue?: unknown }>(event)
   const queue = normalizeQueueKey(body?.queue) || 'now'
   try {
+    // „Na teraz” bywa puste, gdy wszystko jest już po terminie — wtedy bierzemy najpilniejszą z „Do odpowiedzi”
+    // (sortowanie po terminie: najpierw najbardziej spóźnione).
     const id = await claimNext(actor, queue)
+      ?? (queue === 'now' ? await claimNext(actor, 'reply') : null)
     if (!id) {
       return sendNoContent(event)
     }

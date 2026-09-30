@@ -42,6 +42,10 @@ const HUBSPOT_DEPARTMENT: Record<HubspotTicketCategory, Department> = {
   'Offer request': 'product',
   'Unresponsive seller': 'merchant_success',
   'Stripe Payment Issue': 'finance',
+  'Invoices': 'finance',
+  'Data Change': 'cs',
+  'Bug': 'product',
+  'Feature Request': 'product',
   'Spam': 'cs',
   'Other': 'cs'
 }

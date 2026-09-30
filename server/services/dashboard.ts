@@ -1,11 +1,8 @@
 import {
-  CATEGORY_LABELS,
   CHANNEL_LABELS,
-  HUBSPOT_TICKET_CATEGORIES,
-  splitHubspotCategories,
-  type Category,
   type Channel
 } from '../../shared/domain'
+import { ticketTopic, TOPIC_LABELS } from '../../shared/ticket-topic'
 import { neonQuery } from './neon-db'
 
 export type DashboardCategoryRow = {
@@ -49,12 +46,6 @@ export type DashboardReport = {
   openTotal: number
 }
 
-function fallbackCategoryLabel(raw: string): string {
-  if (raw === 'unset' || raw === 'Bez kategorii') return 'Bez kategorii'
-  if (raw in CATEGORY_LABELS) return CATEGORY_LABELS[raw as Category]
-  return raw
-}
-
 function channelLabel(raw: string): string {
   if (raw in CHANNEL_LABELS) return CHANNEL_LABELS[raw as Channel]
   return raw
@@ -86,29 +77,23 @@ function withShares<T extends { count: number }>(
   }))
 }
 
-function tagsFromTicket(sourceCategory: string | null, mappedCategory: string | null): string[] {
-  if (sourceCategory && sourceCategory.trim()) {
-    return splitHubspotCategories(sourceCategory)
-  }
-  if (mappedCategory && mappedCategory.trim()) {
-    return [fallbackCategoryLabel(mappedCategory.trim())]
-  }
-  return ['Bez kategorii']
+type TopicSource = {
+  source_category: string | null
+  subject: string | null
+  first_customer_text: string | null
 }
 
-function countTags(rows: Array<{ source_category: string | null, category: string | null }>) {
+/** Jeden temat na sprawę (shared/ticket-topic.ts) — zamiast tagów HubSpot, gdzie połowa to „Other”. */
+function countTopics(rows: TopicSource[]) {
   const counts = new Map<string, number>()
-  for (const label of HUBSPOT_TICKET_CATEGORIES) {
-    counts.set(label, 0)
-  }
-  counts.set('Bez kategorii', 0)
-
   for (const row of rows) {
-    for (const tag of tagsFromTicket(row.source_category, row.category)) {
-      counts.set(tag, (counts.get(tag) || 0) + 1)
-    }
+    const label = TOPIC_LABELS[ticketTopic({
+      sourceCategory: row.source_category,
+      subject: row.subject,
+      text: row.first_customer_text
+    })]
+    counts.set(label, (counts.get(label) || 0) + 1)
   }
-
   return [...counts.entries()]
     .map(([label, count]) => ({ category: label, label, count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pl'))
@@ -131,13 +116,17 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
   const [ticketRows, channelRows, agentRows] = await Promise.all([
     neonQuery<{
       id: string
-      category: string | null
       source_category: string | null
+      subject: string | null
+      first_customer_text: string | null
       created_at: Date
     }>(
       `select t.id::text as id,
-              t.category,
               t.source_category,
+              t.subject,
+              (select left(e.body, 600) from ticket_events e
+                where e.ticket_id = t.id and e.sender_type = 'customer'
+                order by e.created_at asc limit 1) as first_customer_text,
               t.created_at
        from tickets t
        where (t.created_at at time zone 'Europe/Warsaw')
@@ -176,11 +165,11 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
     )
   ])
 
-  const monthTicketRows: Array<{ source_category: string | null, category: string | null }> = []
+  const monthTicketRows: TopicSource[] = []
   const trendMap = new Map<string, {
     year: number
     month: number
-    rows: Array<{ source_category: string | null, category: string | null }>
+    rows: TopicSource[]
   }>()
   for (let i = 0; i < 6; i++) {
     const point = shiftMonth(trendStart.year, trendStart.month, i)
@@ -194,9 +183,10 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
   for (const row of ticketRows) {
     const created = row.created_at instanceof Date ? row.created_at : new Date(row.created_at)
     const parts = warsawParts(created)
-    const tagged = {
+    const tagged: TopicSource = {
       source_category: row.source_category,
-      category: row.category
+      subject: row.subject,
+      first_customer_text: row.first_customer_text
     }
     const bucket = trendMap.get(`${parts.year}-${parts.month}`)
     if (bucket) bucket.rows.push(tagged)
@@ -206,7 +196,7 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
   }
 
   const monthTotal = monthTicketRows.length
-  const monthCategories = countTags(monthTicketRows)
+  const monthCategories = countTopics(monthTicketRows)
 
   const monthChannels = channelRows.map(row => ({
     channel: row.channel,
@@ -216,7 +206,7 @@ export async function loadDashboard(year: number, month: number): Promise<Dashbo
   const channelTotal = monthChannels.reduce((sum, row) => sum + row.count, 0)
 
   const trend: DashboardTrendMonth[] = [...trendMap.values()].map((bucket) => {
-    const categories = countTags(bucket.rows).filter(row => row.count > 0)
+    const categories = countTopics(bucket.rows).filter(row => row.count > 0)
     return {
       year: bucket.year,
       month: bucket.month,
