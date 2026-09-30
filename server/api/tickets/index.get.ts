@@ -43,6 +43,13 @@ function parsePageSize(value: unknown): number {
   return n
 }
 
+function parseOwnerId(value: unknown): string | 'all' | 'mine' | 'unassigned' {
+  if (value == null || value === '' || value === 'all') return 'all'
+  if (value === 'mine' || value === 'unassigned') return value
+  if (typeof value === 'string' && isUuid(value)) return value
+  throw createError({ statusCode: 400, statusMessage: 'Nieznany właściciel.' })
+}
+
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const actor: TicketActor = { role: user.role, agentId: user.agentId }
@@ -52,16 +59,12 @@ export default defineEventHandler(async (event) => {
   const channel = parseChannel(query.channel)
   const page = parsePage(query.page)
   const pageSize = parsePageSize(query.pageSize)
-
-  const ownerRaw = typeof query.ownerId === 'string' ? query.ownerId : 'all'
-  if (ownerRaw !== 'all' && !isUuid(ownerRaw)) {
-    throw createError({ statusCode: 400, statusMessage: 'Nieznany właściciel.' })
-  }
+  const ownerId = parseOwnerId(query.ownerId)
 
   const list = await listTickets({
     status,
     channel,
-    ownerId: ownerRaw,
+    ownerId,
     page,
     pageSize
   }, actor)
