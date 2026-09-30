@@ -101,7 +101,7 @@ Ostatni miernik jest najważniejszy dla firmy: mówi, czy produkt generuje mniej
 
 ## Decyzje do podjęcia
 
-- [ ] Dziś: wdrożyć poprawkę logowania (punkt 1) i sprawdzić, czy nie powstały już konta na hasło. Kto: Martyna.
+- [x] Dziś: wdrożyć poprawkę logowania (punkt 1) i sprawdzić, czy nie powstały już konta na hasło. Kto: Martyna. — `disableSignUp` na `main`; w Neon tylko konto credential Martyny (zapas).
 - [ ] Zmienić repo na Private. Kto: Owner organizacji sun-store na GitHubie.
 - [ ] Zakres: czy sun.support zastępuje HubSpot tylko w CS, czy staje się miejscem pracy na sprawach dla logistyki, finansów i MS (przekazania z modułu 3).
 - [ ] Który zespół wchodzi pierwszy po CS. Propozycja: logistyka, bo sprawy o dostawę i CMR prawie zawsze jej wymagają. Do potwierdzenia udziałem kategorii „Dostawa” na `/dashboard`.

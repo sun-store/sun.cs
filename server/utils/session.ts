@@ -36,9 +36,6 @@ export async function requireUser(
   if (!staff) {
     throw createError({ statusCode: 403, statusMessage: 'Nie ma Cię na liście sun.support. Poproś admina o dopisanie.' })
   }
-  if (staff.role === 'agent') {
-    throw createError({ statusCode: 403, statusMessage: 'Logowanie agentów jeszcze nie jest włączone.' })
-  }
 
   return {
     id: session.user.id,

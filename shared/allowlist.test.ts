@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeAllowlist, parseAllowlist } from './allowlist'
+import { DEFAULT_CS_TEAM, mergeAllowlist, parseAllowlist } from './allowlist'
 
 describe('parseAllowlist', () => {
   it('czyta email i rolę', () => {
@@ -15,9 +15,16 @@ describe('parseAllowlist', () => {
 })
 
 describe('mergeAllowlist', () => {
-  it('env nadpisuje domyślną rolę', () => {
-    const merged = mergeAllowlist('armand.banaszkiewicz@sun.store:admin')
-    expect(merged.find(entry => entry.email === 'armand.banaszkiewicz@sun.store')?.role).toBe('admin')
-    expect(merged.find(entry => entry.email === 'martyna.kalicka@sun.store')?.role).toBe('admin')
+  it('nie trzyma hardcoded listy w repo', () => {
+    expect(DEFAULT_CS_TEAM).toEqual([])
+    expect(mergeAllowlist('')).toEqual([])
+  })
+
+  it('bierze tylko AUTH_ALLOWLIST z env', () => {
+    const merged = mergeAllowlist('armand.banaszkiewicz@sun.store:admin,martyna.kalicka@sun.store:admin')
+    expect(merged).toEqual([
+      { email: 'armand.banaszkiewicz@sun.store', role: 'admin' },
+      { email: 'martyna.kalicka@sun.store', role: 'admin' }
+    ])
   })
 })

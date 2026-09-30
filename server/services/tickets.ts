@@ -299,13 +299,26 @@ export async function addEvent(ticketId: string, input: {
     firstReply = lockFirstAgentReply(firstReply, now)
   }
 
+  // Klient napisał → Otwarta. Agent/bot do klienta → Czeka. Notatki / do sprzedawcy nie zmieniają statusu.
+  const nextStatus = tickets[0].closed_at
+    ? null
+    : input.senderType === 'customer'
+      ? 'open'
+      : ((input.senderType === 'agent' || input.senderType === 'bot') && input.direction === 'to_customer'
+          ? 'waiting'
+          : null)
+
   await neonQuery(
     `update tickets
      set first_agent_reply_at = $2,
-         status = case when status = 'closed' then status else 'waiting' end,
+         status = case
+           when status = 'closed' then status
+           when $4::text is null then status
+           else $4::ticket_status
+         end,
          business_changed_at = $3
      where id = $1`,
-    [ticketId, firstReply, now]
+    [ticketId, firstReply, now, nextStatus]
   )
 
   return getTicket(ticketId, actor)
