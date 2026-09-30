@@ -280,6 +280,25 @@ async function main() {
       )
       stats.events++
     }
+
+    // Zegar odpowiedzi — bez tego „Weź najpilniejszą” i kolejki now/reply są puste.
+    if (!closed) {
+      const lastCustomer = [...messages].reverse().find(message => message.speaker === 'CUSTOMER')
+      const awaiting = lastSpeaker === 'TEAM' ? 'customer' : 'us'
+      const replyDueAt = awaiting === 'us' && lastCustomer
+        ? new Date(new Date(lastCustomer.created_at).getTime() + (channel === 'email' ? 4 * 3600_000 : 15 * 60_000))
+        : null
+      await sql(
+        connectionString,
+        `update tickets
+         set awaiting = $2,
+             reply_due_at = $3,
+             status = $4
+         where id = $1::uuid`,
+        [ticketId, awaiting, replyDueAt ? replyDueAt.toISOString() : null, status]
+      )
+    }
+
     importedThreads.add(String(thread.id))
     if ((index + 1) % 10 === 0) console.log(`Wątek ${index + 1}/${threads.length}`)
   }

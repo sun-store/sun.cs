@@ -25,7 +25,7 @@ import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
 import type { QueueKey } from '../../shared/queues'
 import { NOW_WINDOW_MIN } from '../../shared/queues'
 import { slaBadge } from '../../shared/sla-label'
-import { nextState } from '../../shared/ticket-state'
+import { conversationStateFromEvents, nextState } from '../../shared/ticket-state'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
 import { ticketTopic, TOPIC_LABELS, TOPIC_NEXT_STEP } from '../../shared/ticket-topic'
@@ -113,6 +113,9 @@ export type EventRow = {
   created_at: Date
 }
 
+/** Sprawa czeka na naszą odpowiedź (importy czasem mają awaiting null przy status=open). */
+const NEEDS_REPLY_SQL = `(t.awaiting = 'us' or (t.awaiting is null and t.status = 'open'))`
+
 function applyQueueFilter(
   queue: QueueKey | undefined,
   clauses: string[],
@@ -121,7 +124,7 @@ function applyQueueFilter(
 ) {
   if (!queue) return
   if (queue === 'now') {
-    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(NEEDS_REPLY_SQL)
     clauses.push(`t.status <> 'closed'`)
     clauses.push('t.reply_due_at is not null')
     clauses.push('t.reply_due_at >= now()')
@@ -130,12 +133,12 @@ function applyQueueFilter(
     return
   }
   if (queue === 'reply') {
-    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(NEEDS_REPLY_SQL)
     clauses.push(`t.status <> 'closed'`)
     return
   }
   if (queue === 'overdue') {
-    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(NEEDS_REPLY_SQL)
     clauses.push(`t.status <> 'closed'`)
     clauses.push('t.reply_due_at is not null')
     clauses.push('t.reply_due_at < now()')
@@ -308,20 +311,20 @@ export async function ticketQueueCounts(
   }>(
     `select
        count(*) filter (
-         where t.awaiting = 'us'
+         where ${NEEDS_REPLY_SQL}
            and t.status <> 'closed'
            and t.reply_due_at is not null
            and t.reply_due_at >= now()
            and t.reply_due_at <= now() + make_interval(mins => ${NOW_WINDOW_MIN})
        )::text as now,
        count(*) filter (
-         where t.awaiting = 'us' and t.status <> 'closed'
+         where ${NEEDS_REPLY_SQL} and t.status <> 'closed'
        )::text as reply,
        count(*) filter (
          where t.status <> 'closed' and t.owner_id = ${mineParam}
        )::text as mine,
        count(*) filter (
-         where t.awaiting = 'us'
+         where ${NEEDS_REPLY_SQL}
            and t.status <> 'closed'
            and t.reply_due_at is not null
            and t.reply_due_at < now()
@@ -354,7 +357,6 @@ export async function claimNext(actor: TicketActor, queue: QueueKey = 'now') {
   const params: unknown[] = []
   const clauses: string[] = ['1=1']
   applyQueueFilter(queue, clauses, params, actor)
-  clauses.push(`t.awaiting = 'us'`)
   clauses.push(accessSql(actor, params))
   const whereSql = clauses.join(' and ')
   params.push(actor.agentId)
@@ -363,6 +365,7 @@ export async function claimNext(actor: TicketActor, queue: QueueKey = 'now') {
   const rows = await neonQuery<{ id: string }>(
     `update tickets set
        owner_id = coalesce(owner_id, $${agentIdx}::uuid),
+       awaiting = coalesce(awaiting, 'us'),
        business_changed_at = now()
      where id = (
        select t.id from tickets t
@@ -523,6 +526,21 @@ export async function createTicket(input: {
     ]
   )
 
+  const state = conversationStateFromEvents([{
+    senderType,
+    direction: 'to_customer',
+    channel: input.channel,
+    at: firstContactAt
+  }])
+  await neonQuery(
+    `update tickets
+     set status = $2::ticket_status,
+         awaiting = $3,
+         reply_due_at = $4
+     where id = $1`,
+    [ticket.id, state.status, state.awaiting, state.replyDueAt]
+  )
+
   return getTicket(ticket.id)
 }
 
@@ -611,6 +629,60 @@ export async function addEvent(ticketId: string, input: {
   }
 
   return getTicket(ticketId, actor)
+}
+
+/** Uzupełnia awaiting / reply_due_at dla otwartych spraw bez zegara (np. po imporcie HubSpot). */
+export async function backfillMissingReplyClocks(limit = 500) {
+  const tickets = await neonQuery<{
+    id: string
+    origin_channel: Channel
+    status: TicketStatus
+  }>(
+    `select id::text as id, origin_channel, status
+     from tickets
+     where status <> 'closed'
+       and (
+         awaiting is null
+         or (awaiting = 'us' and reply_due_at is null)
+       )
+     order by business_changed_at desc nulls last
+     limit $1`,
+    [limit]
+  )
+  let updated = 0
+  for (const ticket of tickets) {
+    const events = await neonQuery<{
+      sender_type: SenderType
+      direction: MessageDirection
+      channel: Channel
+      created_at: Date
+    }>(
+      `select sender_type, direction, channel, created_at
+       from ticket_events
+       where ticket_id = $1::uuid
+       order by created_at asc`,
+      [ticket.id]
+    )
+    const state = conversationStateFromEvents(
+      events.map(event => ({
+        senderType: event.sender_type,
+        direction: event.direction,
+        channel: event.channel || ticket.origin_channel,
+        at: event.created_at instanceof Date ? event.created_at : new Date(event.created_at)
+      })),
+      ticket.status === 'closed'
+    )
+    await neonQuery(
+      `update tickets
+       set status = $2::ticket_status,
+           awaiting = $3,
+           reply_due_at = $4
+       where id = $1::uuid`,
+      [ticket.id, state.status, state.awaiting, state.replyDueAt]
+    )
+    updated += 1
+  }
+  return { scanned: tickets.length, updated }
 }
 
 export async function updateTicket(ticketId: string, input: {

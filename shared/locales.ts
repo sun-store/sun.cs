@@ -20,6 +20,8 @@ export type LocaleMessages = {
     slaPool: string
     slaMet: string
     takeNext: string
+    takeNextEmpty: string
+    takeNextError: string
     searchPlaceholder: string
     search: string
     clear: string
@@ -148,6 +150,8 @@ export const pl: LocaleMessages = {
     slaPool: 'w puli SLA',
     slaMet: 'spełnione',
     takeNext: 'Weź najpilniejszą',
+    takeNextEmpty: 'Brak spraw do wzięcia w tej kolejce.',
+    takeNextError: 'Nie udało się wziąć sprawy.',
     searchPlaceholder: 'Szukaj: transakcja, mail, nazwa, treść…',
     search: 'Szukaj',
     clear: 'Wyczyść',
@@ -276,6 +280,8 @@ export const en: LocaleMessages = {
     slaPool: 'in SLA pool',
     slaMet: 'met',
     takeNext: 'Take most urgent',
+    takeNextEmpty: 'No cases to claim in this queue.',
+    takeNextError: 'Could not claim a case.',
     searchPlaceholder: 'Search: transaction, email, name, body…',
     search: 'Search',
     clear: 'Clear',

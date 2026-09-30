@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextState } from './ticket-state'
+import { conversationStateFromEvents, nextState } from './ticket-state'
 
 describe('nextState', () => {
   const base = {
@@ -64,5 +64,33 @@ describe('nextState', () => {
       channel: 'email',
       at: new Date()
     })).toThrow(/zamkniętej/)
+  })
+})
+
+describe('conversationStateFromEvents', () => {
+  it('ostatni klient → awaiting us + reply_due', () => {
+    const state = conversationStateFromEvents([
+      {
+        senderType: 'customer',
+        direction: 'to_customer',
+        channel: 'chat',
+        at: new Date('2026-09-30T10:00:00Z')
+      },
+      {
+        senderType: 'agent',
+        direction: 'to_customer',
+        channel: 'chat',
+        at: new Date('2026-09-30T10:05:00Z')
+      },
+      {
+        senderType: 'customer',
+        direction: 'to_customer',
+        channel: 'chat',
+        at: new Date('2026-09-30T10:10:00Z')
+      }
+    ])
+    expect(state.status).toBe('open')
+    expect(state.awaiting).toBe('us')
+    expect(state.replyDueAt).toBeInstanceOf(Date)
   })
 })

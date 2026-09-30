@@ -135,9 +135,14 @@ const trendMax = computed(() =>
 
 const topCategory = computed(() => data.value?.byCategory[0] ?? null)
 
+const takeUrgentBusy = ref(false)
+const takeUrgentMessage = ref('')
+
 async function takeUrgent() {
+  takeUrgentMessage.value = ''
+  takeUrgentBusy.value = true
   try {
-    const result = await $fetch<{ id: string } | null>('/api/tickets/next', {
+    const result = await $fetch<{ id: string | null }>('/api/tickets/next', {
       method: 'POST',
       body: { queue: 'now' }
     })
@@ -145,10 +150,14 @@ async function takeUrgent() {
       await navigateTo(`/?queue=now&case=${result.id}`)
       return
     }
-  } catch {
-    // fall through to queue
+    takeUrgentMessage.value = t('inbox', 'takeNextEmpty')
+    await navigateTo('/?queue=reply')
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    takeUrgentMessage.value = fetchErr.data?.statusMessage || t('inbox', 'takeNextError')
+  } finally {
+    takeUrgentBusy.value = false
   }
-  await navigateTo('/?queue=now')
 }
 </script>
 
@@ -206,13 +215,21 @@ async function takeUrgent() {
             {{ action }}
           </li>
         </ol>
-        <div class="mt-4">
+        <div class="mt-4 flex flex-wrap items-center gap-3">
           <UButton
             color="primary"
+            :loading="takeUrgentBusy"
+            :disabled="takeUrgentBusy"
             @click="takeUrgent"
           >
             {{ t('inbox', 'takeNext') }}
           </UButton>
+          <p
+            v-if="takeUrgentMessage"
+            class="text-sm text-muted"
+          >
+            {{ takeUrgentMessage }}
+          </p>
         </div>
       </UCard>
 

@@ -262,17 +262,32 @@ function closePanel() {
   syncUrl()
 }
 
+const takeNextBusy = ref(false)
+const takeNextMessage = ref('')
+
 async function takeNext() {
+  takeNextMessage.value = ''
+  takeNextBusy.value = true
   try {
-    const result = await $fetch<{ id: string } | null>('/api/tickets/next', {
+    const result = await $fetch<{ id: string | null }>('/api/tickets/next', {
       method: 'POST',
-      body: { queue: workQueue.value }
+      body: { queue: 'now' }
     })
     await refresh()
     await refreshCounts()
-    if (result?.id) selectTicket(result.id)
-  } catch {
-    // brak spraw albo błąd — lista już odświeżona
+    if (result?.id) {
+      selectTicket(result.id)
+      workQueue.value = 'now'
+      return
+    }
+    takeNextMessage.value = t('inbox', 'takeNextEmpty')
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    takeNextMessage.value = fetchErr.data?.statusMessage || t('inbox', 'takeNextError')
+    await refresh()
+    await refreshCounts()
+  } finally {
+    takeNextBusy.value = false
   }
 }
 
@@ -663,7 +678,8 @@ const pageLabel = computed(() => {
         <UButton
           color="neutral"
           variant="outline"
-          :disabled="pending"
+          :disabled="pending || takeNextBusy"
+          :loading="takeNextBusy"
           :title="locale === 'en'
             ? 'Opens the case that most urgently needs a reply (closest to the SLA deadline or longest overdue) and assigns it to you if nobody owns it.'
             : 'Otwiera sprawę, na którą najpilniej trzeba odpowiedzieć (najbliżej końca SLA albo najdłużej po terminie), i przypisuje ją do Ciebie, jeśli nikt jej nie prowadzi.'"
@@ -676,6 +692,13 @@ const pageLabel = computed(() => {
         </UButton>
       </div>
     </div>
+
+    <p
+      v-if="takeNextMessage"
+      class="mt-3 text-sm text-muted"
+    >
+      {{ takeNextMessage }}
+    </p>
 
     <div class="mt-6 flex flex-wrap items-center gap-3">
       <USelect

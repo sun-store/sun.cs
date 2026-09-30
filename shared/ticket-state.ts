@@ -65,3 +65,27 @@ export function nextState(
     replyDueAt: current.replyDueAt
   }
 }
+
+/** Przelicza awaiting / reply_due / status z historii zdarzeń (import, backfill). */
+export function conversationStateFromEvents(
+  events: TicketStateEvent[],
+  closed = false
+): TicketConversationState {
+  if (closed) {
+    return { status: 'closed', awaiting: 'customer', replyDueAt: null }
+  }
+  let current: { status: TicketStatus, awaiting: AwaitingParty | null, replyDueAt: Date | null } = {
+    status: 'open',
+    awaiting: null,
+    replyDueAt: null
+  }
+  for (const event of events) {
+    if (current.status === 'closed') break
+    current = nextState(current, event)
+  }
+  return {
+    status: current.status,
+    awaiting: current.awaiting || 'us',
+    replyDueAt: current.replyDueAt
+  }
+}
