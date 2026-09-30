@@ -1,21 +1,29 @@
 <script setup lang="ts">
 import { APP_ROLES, type AppRole } from '~~/shared/domain'
+import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '~~/shared/departments'
 
 const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'Admin',
   lead: 'Lead',
-  agent: 'Agent (jeszcze nie loguje się)'
+  agent: 'Agent'
 }
 
-const { data, refresh, error } = await useFetch<{ members: Array<{ email: string, role: string }> }>('/api/team')
+const { data, refresh, error } = await useFetch<{
+  members: Array<{ email: string, role: AppRole, department: Department }>
+}>('/api/team')
+
 const form = reactive({
   email: '',
-  role: 'lead' as AppRole
+  role: 'lead' as AppRole,
+  department: 'cs' as Department
 })
 const formError = ref('')
 const saving = ref(false)
+const rowError = ref('')
+const savingEmail = ref<string | null>(null)
 
 const roleItems = APP_ROLES.map(value => ({ label: ROLE_LABELS[value], value }))
+const departmentItems = DEPARTMENTS.map(value => ({ label: DEPARTMENT_LABELS[value], value }))
 
 async function addMember() {
   formError.value = ''
@@ -23,15 +31,41 @@ async function addMember() {
   try {
     await $fetch('/api/team', {
       method: 'POST',
-      body: { email: form.email, role: form.role }
+      body: {
+        email: form.email,
+        role: form.role,
+        department: form.department
+      }
     })
     form.email = ''
+    form.department = 'cs'
     await refresh()
   } catch (err: unknown) {
     const fetchErr = err as { data?: { statusMessage?: string } }
     formError.value = fetchErr.data?.statusMessage || 'Nie udało się dopisać.'
   } finally {
     saving.value = false
+  }
+}
+
+async function saveMemberDepartment(member: { email: string, role: AppRole, department: Department }) {
+  rowError.value = ''
+  savingEmail.value = member.email
+  try {
+    await $fetch('/api/team', {
+      method: 'POST',
+      body: {
+        email: member.email,
+        role: member.role,
+        department: member.department
+      }
+    })
+    await refresh()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    rowError.value = fetchErr.data?.statusMessage || 'Nie udało się zapisać działu.'
+  } finally {
+    savingEmail.value = null
   }
 }
 </script>
@@ -42,7 +76,7 @@ async function addMember() {
       Zespół
     </h1>
     <p class="mt-1 text-sm text-muted">
-      Tylko osoby z tej listy wejdą do sun.support. Agentów wpuszczamy w następnym kroku.
+      Tylko osoby z tej listy wejdą do sun.support. Dział ustawia domyślną kolejkę na liście spraw (Support widzi wszystkie).
     </p>
 
     <p
@@ -50,6 +84,12 @@ async function addMember() {
       class="mt-6 text-sm text-error"
     >
       {{ error.statusMessage || error.message }}
+    </p>
+    <p
+      v-if="rowError"
+      class="mt-2 text-sm text-error"
+    >
+      {{ rowError }}
     </p>
 
     <UCard class="mt-6">
@@ -62,6 +102,9 @@ async function addMember() {
             <th class="pb-3 font-medium">
               Rola
             </th>
+            <th class="pb-3 font-medium">
+              Dział
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -73,7 +116,17 @@ async function addMember() {
             <td class="py-3">
               {{ member.email }}
             </td>
-            <td>{{ ROLE_LABELS[member.role as AppRole] || member.role }}</td>
+            <td>{{ ROLE_LABELS[member.role] || member.role }}</td>
+            <td class="py-2">
+              <USelect
+                v-model="member.department"
+                :items="departmentItems"
+                value-key="value"
+                class="w-48"
+                :disabled="savingEmail === member.email"
+                @update:model-value="saveMemberDepartment(member)"
+              />
+            </td>
           </tr>
         </tbody>
       </table>
@@ -101,6 +154,14 @@ async function addMember() {
           <USelect
             v-model="form.role"
             :items="roleItems"
+            value-key="value"
+            class="w-full"
+          />
+        </UFormField>
+        <UFormField label="Dział">
+          <USelect
+            v-model="form.department"
+            :items="departmentItems"
             value-key="value"
             class="w-full"
           />

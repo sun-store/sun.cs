@@ -27,7 +27,7 @@ Nie przenoś polityk RLS z sun.logistics. Tam szeroka polityka (`auth.uid() is n
 
 ## Odczyt
 
-Lista spraw: jawne kolumny (transakcja, kategoria, dział, od kiedy wisi od `first_contact_at`, podsumowanie, właściciel), stronicowanie (`TICKET_LIST_PAGE_SIZE` = 50, max 100), filtr statusu / kolejki / działu (`department`). Podsumowanie SLA to osobny, wąski select, nie druga kopia pełnej listy.
+Lista spraw: jawne kolumny (transakcja, kategoria, dział, od kiedy wisi od `first_contact_at`, podsumowanie, właściciel), stronicowanie (`TICKET_LIST_PAGE_SIZE` = 50, max 100), filtr statusu / kolejki / działu. Dział pracownika (`staff.department` / allowlist): Support i lead/admin domyślnie widzą wszystkie działy; Logistyka/Finanse/MS/Produkt — swoją kolejkę. Podsumowanie SLA to osobny, wąski select.
 
 Indeks listy: `tickets_business_changed_idx`.
 

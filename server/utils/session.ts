@@ -1,5 +1,6 @@
 import { createError, getRequestHeaders } from 'h3'
 import type { AppRole } from '../../shared/domain'
+import type { Department } from '../../shared/departments'
 import { getBetterAuth } from '../services/auth'
 import { hasNeonConfig } from '../services/neon-db'
 import { ensureStaff } from '../services/staff'
@@ -10,6 +11,7 @@ export type SessionUser = {
   name: string
   role: AppRole
   agentId: string | null
+  department: Department
 }
 
 export async function requireUser(
@@ -42,7 +44,8 @@ export async function requireUser(
     email: session.user.email,
     name: staff.displayName,
     role: staff.role,
-    agentId: staff.agentId
+    agentId: staff.agentId,
+    department: staff.department
   }
 }
 

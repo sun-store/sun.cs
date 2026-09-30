@@ -1,6 +1,7 @@
 import { listTickets, ticketSummary, type TicketActor } from '../../services/tickets'
 import { requireUser } from '../../utils/session'
 import { isUuid } from '../../utils/uuid'
+import { canBrowseAllDepartments } from '../../../shared/access'
 import { CHANNELS, TICKET_STATUSES, type Channel, type TicketStatus } from '../../../shared/domain'
 import { DEPARTMENTS, isDepartment, type Department } from '../../../shared/departments'
 import { TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../../shared/text-bounds'
@@ -67,7 +68,10 @@ export default defineEventHandler(async (event) => {
   const page = parsePage(query.page)
   const pageSize = parsePageSize(query.pageSize)
   const ownerId = parseOwnerId(query.ownerId)
-  const department = parseDepartment(query.department)
+  const requestedDepartment = parseDepartment(query.department)
+  const department = canBrowseAllDepartments(user.role, user.department)
+    ? requestedDepartment
+    : (user.department || 'cs')
 
   const list = await listTickets({
     status,
