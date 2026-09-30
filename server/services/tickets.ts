@@ -14,14 +14,20 @@ import {
   STATUS_LABELS,
   splitHubspotCategories
 } from '../../shared/domain'
-import { seesAllTickets } from '../../shared/access'
+import { resolveTicketAccess } from '../../shared/access'
 import {
   DEPARTMENT_LABELS,
   isDepartment,
   resolveDepartment,
   type Department
 } from '../../shared/departments'
+import {
+  replyClockAfterAgentToCustomer,
+  replyClockAfterCustomerMessage
+} from '../../shared/reply-clock'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
+import { statusAfterEvent } from '../../shared/ticket-status'
+import type { TicketQueue } from '../../shared/ticket-queues'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
 import { isUuid } from '../utils/uuid'
@@ -32,22 +38,25 @@ import { loadCustomerOrders } from './orders'
 export type TicketActor = {
   role: AppRole
   agentId: string | null
+  department?: Department | null
   name?: string
 }
 
 const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
             t.related_transaction_id, t.owner_id, t.subject, t.created_at, t.first_contact_at,
             t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id,
-            t.source_category, t.department`
+            t.source_category, t.department, t.awaiting, t.reply_due_at`
 
 const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
               where e.ticket_id = t.id and e.call_status is not null
               order by e.created_at asc limit 1)`
 
 function accessSql(actor: TicketActor | undefined, params: unknown[], alias = 't'): string {
-  if (!actor || seesAllTickets(actor.role)) return 'true'
-  params.push(actor.agentId)
-  return `${alias}.owner_id = $${params.length}::uuid`
+  const access = resolveTicketAccess(actor)
+  if (access.type === 'all') return 'true'
+  if (access.type === 'none') return 'false'
+  params.push(access.department)
+  return `${alias}.department = $${params.length}`
 }
 
 export type TicketRow = {
@@ -71,6 +80,8 @@ export type TicketRow = {
   hubspot_thread_id?: string | null
   source_category?: string | null
   department?: Department | null
+  awaiting?: 'us' | 'customer' | null
+  reply_due_at?: Date | null
 }
 
 export type EventRow = {
@@ -88,11 +99,71 @@ export type EventRow = {
   created_at: Date
 }
 
+function applyQueueFilter(
+  queue: TicketQueue | undefined,
+  clauses: string[],
+  params: unknown[],
+  actor?: TicketActor
+) {
+  if (!queue) return
+  if (queue === 'now') {
+    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(`t.status <> 'closed'`)
+    clauses.push('t.reply_due_at is not null')
+    clauses.push('t.reply_due_at >= now()')
+    clauses.push(`t.reply_due_at <= now() + interval '60 minutes'`)
+    return
+  }
+  if (queue === 'todo') {
+    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(`t.status <> 'closed'`)
+    return
+  }
+  if (queue === 'overdue') {
+    clauses.push(`t.awaiting = 'us'`)
+    clauses.push(`t.status <> 'closed'`)
+    clauses.push('t.reply_due_at is not null')
+    clauses.push('t.reply_due_at < now()')
+    return
+  }
+  if (queue === 'unassigned') {
+    clauses.push('t.owner_id is null')
+    clauses.push(`t.status <> 'closed'`)
+    return
+  }
+  if (queue === 'waiting_customer') {
+    clauses.push(`t.awaiting = 'customer'`)
+    clauses.push(`t.status <> 'closed'`)
+    return
+  }
+  if (queue === 'mine') {
+    clauses.push(`t.status <> 'closed'`)
+    if (!actor?.agentId) {
+      clauses.push('false')
+      return
+    }
+    params.push(actor.agentId)
+    clauses.push(`t.owner_id = $${params.length}::uuid`)
+  }
+}
+
+function orderSqlForQueue(queue: TicketQueue | undefined): string {
+  if (queue === 'waiting_customer') {
+    return 't.business_changed_at desc'
+  }
+  if (queue === 'now' || queue === 'todo' || queue === 'overdue' || queue === 'unassigned' || queue === 'mine') {
+    return 't.reply_due_at asc nulls last, t.business_changed_at desc'
+  }
+  return 't.business_changed_at desc'
+}
+
 export async function listTickets(filters: {
   status?: TicketStatus | 'all'
   channel?: Channel | 'all'
   ownerId?: string | 'all' | 'mine' | 'unassigned'
   department?: Department | 'all'
+  queue?: TicketQueue
+  q?: string
   page?: number
   pageSize?: number
 }, actor?: TicketActor) {
@@ -100,12 +171,46 @@ export async function listTickets(filters: {
   const rawSize = Number.isInteger(filters.pageSize) ? (filters.pageSize as number) : TICKET_LIST_PAGE_SIZE
   const pageSize = Math.min(TICKET_LIST_PAGE_SIZE_MAX, Math.max(1, rawSize))
   const offset = (page - 1) * pageSize
+  const q = filters.q?.trim() || ''
 
   const clauses = ['1=1']
   const params: unknown[] = []
-  if (filters.status && filters.status !== 'all') {
-    params.push(filters.status)
-    clauses.push(`t.status = $${params.length}`)
+  if (q) {
+    params.push(`%${q.replace(/[%_\\]/g, '\\$&').slice(0, 200)}%`)
+    const likeIdx = params.length
+    clauses.push(`(
+      t.related_transaction_id ilike $${likeIdx} escape '\\'
+      or coalesce(t.subject, '') ilike $${likeIdx} escape '\\'
+      or c.display_name ilike $${likeIdx} escape '\\'
+      or exists (
+        select 1 from contact_identifiers ci
+        where ci.contact_id = t.contact_id and ci.value ilike $${likeIdx} escape '\\'
+      )
+      or exists (
+        select 1 from ticket_events e
+        where e.ticket_id = t.id and coalesce(e.body, '') ilike $${likeIdx} escape '\\'
+      )
+    )`)
+  } else if (filters.queue) {
+    applyQueueFilter(filters.queue, clauses, params, actor)
+  } else {
+    if (filters.status && filters.status !== 'all') {
+      params.push(filters.status)
+      clauses.push(`t.status = $${params.length}`)
+    }
+    if (filters.ownerId === 'unassigned') {
+      clauses.push('t.owner_id is null')
+    } else if (filters.ownerId === 'mine') {
+      if (!actor?.agentId) {
+        clauses.push('false')
+      } else {
+        params.push(actor.agentId)
+        clauses.push(`t.owner_id = $${params.length}::uuid`)
+      }
+    } else if (filters.ownerId && filters.ownerId !== 'all') {
+      params.push(filters.ownerId)
+      clauses.push(`t.owner_id = $${params.length}::uuid`)
+    }
   }
   if (filters.channel && filters.channel !== 'all') {
     params.push(filters.channel)
@@ -115,25 +220,13 @@ export async function listTickets(filters: {
     params.push(filters.department)
     clauses.push(`t.department = $${params.length}`)
   }
-  if (filters.ownerId === 'unassigned') {
-    clauses.push('t.owner_id is null')
-  } else if (filters.ownerId === 'mine') {
-    if (!actor?.agentId) {
-      clauses.push('false')
-    } else {
-      params.push(actor.agentId)
-      clauses.push(`t.owner_id = $${params.length}::uuid`)
-    }
-  } else if (filters.ownerId && filters.ownerId !== 'all') {
-    params.push(filters.ownerId)
-    clauses.push(`t.owner_id = $${params.length}::uuid`)
-  }
   clauses.push(accessSql(actor, params))
   const whereSql = clauses.join(' and ')
 
   const countRows = await neonQuery<{ n: string }>(
     `select count(*)::text as n
      from tickets t
+     join contacts c on c.id = t.contact_id
      where ${whereSql}`,
     params
   )
@@ -142,6 +235,9 @@ export async function listTickets(filters: {
   const listParams = [...params, pageSize, offset]
   const limitIdx = params.length + 1
   const offsetIdx = params.length + 2
+  const orderSql = q
+    ? 't.business_changed_at desc'
+    : orderSqlForQueue(filters.queue)
   const rows = await neonQuery<TicketRow>(
     `select ${TICKET_COLUMNS}, c.display_name as contact_name, a.display_name as owner_name,
             ${CALL_STATUS_SQL} as call_status
@@ -149,7 +245,7 @@ export async function listTickets(filters: {
      join contacts c on c.id = t.contact_id
      left join agents a on a.id = t.owner_id
      where ${whereSql}
-     order by t.business_changed_at desc
+     order by ${orderSql}
      limit $${limitIdx} offset $${offsetIdx}`,
     listParams
   )
@@ -161,7 +257,77 @@ export async function listTickets(filters: {
     pageSize,
     total,
     totalPages,
-    truncated: false
+    truncated: false,
+    queue: q ? null : (filters.queue ?? null),
+    q: q || null
+  }
+}
+
+export async function ticketQueueCounts(
+  actor?: TicketActor,
+  department: Department | 'all' = 'all'
+) {
+  const params: unknown[] = []
+  const deptClause = department !== 'all'
+    ? (() => {
+        params.push(department)
+        return `and t.department = $${params.length}`
+      })()
+    : ''
+  const access = accessSql(actor, params)
+  const mineParam = actor?.agentId
+    ? (() => {
+        params.push(actor.agentId)
+        return `$${params.length}::uuid`
+      })()
+    : 'null'
+
+  const rows = await neonQuery<{
+    now: string
+    todo: string
+    mine: string
+    overdue: string
+    unassigned: string
+    waiting_customer: string
+  }>(
+    `select
+       count(*) filter (
+         where t.awaiting = 'us'
+           and t.status <> 'closed'
+           and t.reply_due_at is not null
+           and t.reply_due_at >= now()
+           and t.reply_due_at <= now() + interval '60 minutes'
+       )::text as now,
+       count(*) filter (
+         where t.awaiting = 'us' and t.status <> 'closed'
+       )::text as todo,
+       count(*) filter (
+         where t.status <> 'closed' and t.owner_id = ${mineParam}
+       )::text as mine,
+       count(*) filter (
+         where t.awaiting = 'us'
+           and t.status <> 'closed'
+           and t.reply_due_at is not null
+           and t.reply_due_at < now()
+       )::text as overdue,
+       count(*) filter (
+         where t.owner_id is null and t.status <> 'closed'
+       )::text as unassigned,
+       count(*) filter (
+         where t.awaiting = 'customer' and t.status <> 'closed'
+       )::text as waiting_customer
+     from tickets t
+     where ${access} ${deptClause}`,
+    params
+  )
+  const row = rows[0]
+  return {
+    now: Number(row?.now || 0),
+    todo: Number(row?.todo || 0),
+    mine: Number(row?.mine || 0),
+    overdue: Number(row?.overdue || 0),
+    unassigned: Number(row?.unassigned || 0),
+    waiting_customer: Number(row?.waiting_customer || 0)
   }
 }
 
@@ -333,8 +499,9 @@ export async function addEvent(ticketId: string, input: {
   const tickets = await neonQuery<{
     first_agent_reply_at: Date | null
     closed_at: Date | null
+    origin_channel: Channel
   }>(
-    `select first_agent_reply_at, closed_at from tickets t where t.id = $1::uuid and ${access}`,
+    `select first_agent_reply_at, closed_at, origin_channel from tickets t where t.id = $1::uuid and ${access}`,
     params
   )
   if (!tickets[0]) return null
@@ -355,14 +522,29 @@ export async function addEvent(ticketId: string, input: {
     firstReply = lockFirstAgentReply(firstReply, now)
   }
 
-  // Klient napisał → Otwarta. Agent/bot do klienta → Czeka. Notatki / do sprzedawcy nie zmieniają statusu.
-  const nextStatus = tickets[0].closed_at
-    ? null
-    : input.senderType === 'customer'
-      ? 'open'
-      : ((input.senderType === 'agent' || input.senderType === 'bot') && input.direction === 'to_customer'
-          ? 'waiting'
-          : null)
+  const nextStatus = statusAfterEvent({
+    senderType: input.senderType,
+    direction: input.direction,
+    closed: Boolean(tickets[0].closed_at)
+  })
+
+  let awaiting: 'us' | 'customer' | null = null
+  let replyDueAt: Date | null = null
+  let clockTouched = false
+  if (input.senderType === 'customer') {
+    const clock = replyClockAfterCustomerMessage(input.channel || tickets[0].origin_channel, now)
+    awaiting = clock.awaiting
+    replyDueAt = clock.replyDueAt
+    clockTouched = true
+  } else if (
+    (input.senderType === 'agent' || input.senderType === 'bot')
+    && input.direction === 'to_customer'
+  ) {
+    const clock = replyClockAfterAgentToCustomer()
+    awaiting = clock.awaiting
+    replyDueAt = null
+    clockTouched = true
+  }
 
   await neonQuery(
     `update tickets
@@ -372,9 +554,11 @@ export async function addEvent(ticketId: string, input: {
            when $4::text is null then status
            else $4::ticket_status
          end,
+         awaiting = case when $5::boolean then $6 else awaiting end,
+         reply_due_at = case when $5::boolean then $7 else reply_due_at end,
          business_changed_at = $3
      where id = $1`,
-    [ticketId, firstReply, now, nextStatus]
+    [ticketId, firstReply, now, nextStatus, clockTouched, awaiting, replyDueAt]
   )
 
   return getTicket(ticketId, actor)
@@ -562,9 +746,25 @@ async function insertSystemChangeEvents(input: {
   )
 }
 
-export async function listAgents() {
-  return neonQuery<{ id: string, display_name: string, email: string | null }>(
-    'select id, display_name, email from agents where active = true order by display_name'
+export async function listAgents(department?: Department | 'all') {
+  const params: unknown[] = []
+  let deptSql = ''
+  if (department && department !== 'all') {
+    params.push(department)
+    deptSql = `and s.department = $${params.length}`
+  }
+  return neonQuery<{
+    id: string
+    display_name: string
+    email: string | null
+    department: Department | null
+  }>(
+    `select a.id, a.display_name, a.email, s.department
+     from agents a
+     left join staff s on s.user_id = a.user_id
+     where a.active = true ${deptSql}
+     order by a.display_name`,
+    params
   )
 }
 
@@ -650,6 +850,8 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     sourceCategory: row.source_category ?? null,
     department,
     departmentLabel: DEPARTMENT_LABELS[department],
+    awaiting: row.awaiting ?? null,
+    replyDueAt: row.reply_due_at ?? null,
     priority: row.priority,
     relatedTransactionId: row.related_transaction_id,
     subject: row.subject,

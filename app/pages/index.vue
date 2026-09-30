@@ -1,37 +1,58 @@
 <script setup lang="ts">
 import {
+  CATEGORIES,
   CATEGORY_LABELS,
+  PRIORITY_LABELS,
+  TICKET_PRIORITIES,
   type AppRole,
   type TicketStatus
 } from '~~/shared/domain'
-import { canBrowseAllDepartments, defaultDepartmentFilter, seesAllTickets } from '~~/shared/access'
+import { canBrowseAllDepartments, defaultDepartmentFilter } from '~~/shared/access'
 import {
   DEPARTMENTS,
   DEPARTMENT_LABELS,
   hangingSinceLabel,
   type Department
 } from '~~/shared/departments'
+import {
+  TICKET_QUEUES,
+  TICKET_QUEUE_LABELS,
+  type TicketQueue
+} from '~~/shared/ticket-queues'
+import {
+  cleanSubjectLine,
+  replyDueLabel,
+  shortTransactionId
+} from '~~/shared/reply-due-label'
 
-type QueueFilter = 'all' | 'mine' | 'unassigned'
-
-const status = ref<TicketStatus | 'all'>('open')
-const queue = ref<QueueFilter>('all')
+const workQueue = ref<TicketQueue>('now')
+const status = ref<TicketStatus | 'all'>('all')
 const page = ref(1)
+const searchInput = ref('')
+const searchQ = ref('')
+const selectedId = ref<string | null>(null)
+
+type TicketListItem = {
+  id: string
+  subject: string | null
+  summary?: string | null
+  aiSummary?: string | null
+  category: string | null
+  categoryLabel?: string | null
+  sourceCategory?: string | null
+  relatedTransactionId?: string | null
+  department?: Department
+  departmentLabel?: string
+  ownerId?: string | null
+  ownerName?: string | null
+  firstContactAt: string
+  awaiting?: 'us' | 'customer' | null
+  replyDueAt?: string | null
+  [key: string]: unknown
+}
 
 type TicketsListResponse = {
-  tickets: Array<{
-    id: string
-    subject: string | null
-    summary?: string | null
-    category: string | null
-    categoryLabel?: string | null
-    relatedTransactionId?: string | null
-    department?: Department
-    departmentLabel?: string
-    ownerName?: string | null
-    firstContactAt: string
-    [key: string]: unknown
-  }>
+  tickets: TicketListItem[]
   summary: {
     open: number
     slaEligible: number
@@ -41,6 +62,11 @@ type TicketsListResponse = {
   pageSize: number
   total: number
   totalPages: number
+}
+
+type CountsResponse = {
+  counts: Record<TicketQueue, number>
+  queues: Array<{ id: TicketQueue, label: string, count: number }>
 }
 
 const { data: me } = await useFetch<{
@@ -61,15 +87,93 @@ watch(me, (value) => {
 }, { once: true })
 
 const { data, refresh, pending, error } = await useFetch<TicketsListResponse>('/api/tickets', {
+  query: computed(() => {
+    const base: Record<string, string | number> = {
+      department: department.value,
+      page: page.value
+    }
+    if (searchQ.value) {
+      base.q = searchQ.value
+      return base
+    }
+    base.queue = workQueue.value
+    base.status = status.value
+    return base
+  })
+})
+
+type TicketPanelDetail = {
+  id?: string
+  subject?: string | null
+  contactName?: string | null
+  contact?: { display_name?: string | null, customer_role?: string | null } | null
+  relatedTransactionId?: string | null
+  categoryLabel?: string | null
+  sourceCategory?: string | null
+  category?: string | null
+  department?: Department | null
+  departmentLabel?: string | null
+  awaiting?: 'us' | 'customer' | null
+  replyDueAt?: string | null
+  firstContactAt?: string
+  channel?: string
+  status?: string
+  ownerId?: string | null
+  ownerName?: string | null
+  events?: Array<{
+    id: string
+    senderType: string
+    direction: string
+    channel: string
+    body?: string | null
+    createdAt: string
+  }>
+}
+
+const panelTicket = ref<TicketPanelDetail | null>(null)
+const panelPending = ref(false)
+const panelError = ref('')
+
+async function refreshPanel() {
+  if (!selectedId.value) {
+    panelTicket.value = null
+    panelError.value = ''
+    return
+  }
+  panelPending.value = true
+  panelError.value = ''
+  try {
+    panelTicket.value = await $fetch<TicketPanelDetail>(`/api/tickets/${selectedId.value}`)
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string }, statusMessage?: string }
+    panelError.value = fetchErr.data?.statusMessage || fetchErr.statusMessage || 'Nie udało się wczytać sprawy.'
+    panelTicket.value = null
+  } finally {
+    panelPending.value = false
+  }
+}
+
+watch(selectedId, () => {
+  refreshPanel()
+})
+
+const { data: countsData, refresh: refreshCounts } = await useFetch<CountsResponse>('/api/tickets/counts', {
   query: computed(() => ({
-    status: status.value,
-    ownerId: queue.value,
-    department: department.value,
-    page: page.value
+    department: department.value
   }))
 })
 
-watch([status, queue, department], () => {
+let countsTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  countsTimer = setInterval(() => {
+    refreshCounts()
+  }, 60_000)
+})
+onUnmounted(() => {
+  if (countsTimer) clearInterval(countsTimer)
+})
+
+watch([workQueue, department, searchQ], () => {
   if (page.value !== 1) {
     page.value = 1
     return
@@ -77,27 +181,183 @@ watch([status, queue, department], () => {
   refresh()
 })
 
+watch(department, () => {
+  refreshCounts()
+})
+
 watch(page, () => {
   refresh()
 })
 
-const statusItems = [
-  { label: 'Otwarte', value: 'open' },
-  { label: 'Czeka', value: 'waiting' },
-  { label: 'Zamknięte', value: 'closed' },
-  { label: 'Wszystkie', value: 'all' }
-]
+function applySearch() {
+  searchQ.value = searchInput.value.trim()
+  selectedId.value = null
+  page.value = 1
+}
 
-const queueItems = computed(() => {
-  const items: Array<{ label: string, value: QueueFilter }> = [
-    { label: 'Wszystkie kolejki', value: 'all' },
-    { label: 'Moje', value: 'mine' }
-  ]
-  if (me.value?.role && seesAllTickets(me.value.role)) {
-    items.push({ label: 'Nieprzypisane', value: 'unassigned' })
-  }
-  return items
+function clearSearch() {
+  searchInput.value = ''
+  searchQ.value = ''
+  page.value = 1
+}
+
+function selectTicket(id: string) {
+  selectedId.value = id
+}
+
+function closePanel() {
+  selectedId.value = null
+}
+
+const panelEvents = computed(() => {
+  const events = panelTicket.value?.events || []
+  return events.slice(-3).reverse()
 })
+
+const migrateDepartment = ref<Department>('cs')
+watch(() => panelTicket.value?.department, (value) => {
+  if (value) migrateDepartment.value = value
+}, { immediate: true })
+
+const panelOwnerId = ref<string | 'unassigned'>('unassigned')
+watch(() => panelTicket.value?.ownerId, (value) => {
+  panelOwnerId.value = value || 'unassigned'
+}, { immediate: true })
+
+const { data: agentsData, refresh: refreshAgents } = await useFetch<Array<{
+  id: string
+  display_name: string
+  department?: Department | null
+}>>('/api/agents', {
+  query: computed(() => ({
+    department: panelTicket.value?.department || 'all'
+  })),
+  immediate: false
+})
+
+watch(() => panelTicket.value?.department, () => {
+  if (selectedId.value) refreshAgents()
+})
+
+const ownerItems = computed(() => [
+  { label: 'nieprzypisana', value: 'unassigned' as const },
+  ...(agentsData.value || []).map(agent => ({
+    label: agent.display_name,
+    value: agent.id
+  }))
+])
+
+const migrating = ref(false)
+const migrateError = ref('')
+const savingOwner = ref(false)
+const ownerError = ref('')
+const replyBody = ref('')
+const replyError = ref('')
+const sending = ref(false)
+const closing = ref(false)
+const closeError = ref('')
+const closeForm = reactive({
+  category: 'delivery' as typeof CATEGORIES[number],
+  priority: 'medium' as typeof TICKET_PRIORITIES[number]
+})
+
+const closeCategoryItems = CATEGORIES.map(value => ({ label: CATEGORY_LABELS[value], value }))
+const closePriorityItems = TICKET_PRIORITIES.map(value => ({ label: PRIORITY_LABELS[value], value }))
+
+async function saveDepartment() {
+  if (!selectedId.value) return
+  migrateError.value = ''
+  migrating.value = true
+  try {
+    await $fetch(`/api/tickets/${selectedId.value}`, {
+      method: 'PATCH',
+      body: { department: migrateDepartment.value }
+    })
+    await refreshPanel()
+    await refresh()
+    await refreshCounts()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    migrateError.value = fetchErr.data?.statusMessage || 'Nie udało się przenieść sprawy.'
+  } finally {
+    migrating.value = false
+  }
+}
+
+async function saveOwner() {
+  if (!selectedId.value) return
+  ownerError.value = ''
+  savingOwner.value = true
+  try {
+    await $fetch(`/api/tickets/${selectedId.value}`, {
+      method: 'PATCH',
+      body: { ownerId: panelOwnerId.value === 'unassigned' ? null : panelOwnerId.value }
+    })
+    await refreshPanel()
+    await refresh()
+    await refreshCounts()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    ownerError.value = fetchErr.data?.statusMessage || 'Nie udało się zmienić prowadzącego.'
+  } finally {
+    savingOwner.value = false
+  }
+}
+
+async function sendPanelReply() {
+  if (!selectedId.value || !replyBody.value.trim()) return
+  replyError.value = ''
+  sending.value = true
+  try {
+    await $fetch(`/api/tickets/${selectedId.value}/events`, {
+      method: 'POST',
+      body: {
+        body: replyBody.value,
+        direction: 'to_customer',
+        channel: panelTicket.value?.channel || 'email',
+        senderType: 'agent'
+      }
+    })
+    replyBody.value = ''
+    await refreshPanel()
+    await refresh()
+    await refreshCounts()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    replyError.value = fetchErr.data?.statusMessage || 'Nie udało się wysłać.'
+  } finally {
+    sending.value = false
+  }
+}
+
+async function closePanelTicket() {
+  if (!selectedId.value) return
+  closeError.value = ''
+  closing.value = true
+  try {
+    await $fetch(`/api/tickets/${selectedId.value}`, {
+      method: 'PATCH',
+      body: {
+        status: 'closed',
+        category: closeForm.category,
+        priority: closeForm.priority
+      }
+    })
+    await refreshPanel()
+    await refresh()
+    await refreshCounts()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    closeError.value = fetchErr.data?.statusMessage || 'Nie można zamknąć bez kategorii i priorytetu.'
+  } finally {
+    closing.value = false
+  }
+}
+
+const departmentSelectItems = DEPARTMENTS.map(value => ({
+  label: DEPARTMENT_LABELS[value],
+  value
+}))
 
 const browseAllDepartments = computed(() =>
   Boolean(me.value?.role && canBrowseAllDepartments(me.value.role, me.value.department))
@@ -114,15 +374,79 @@ const departmentItems = computed(() => {
   return [{ label: DEPARTMENT_LABELS[own], value: own }]
 })
 
-function categoryText(ticket: TicketsListResponse['tickets'][number]) {
-  if (ticket.categoryLabel && ticket.categoryLabel !== '—') return ticket.categoryLabel
+const queueNav = computed(() =>
+  TICKET_QUEUES.map(id => ({
+    id,
+    label: TICKET_QUEUE_LABELS[id],
+    count: countsData.value?.counts?.[id] ?? 0
+  }))
+)
+
+function categoryText(ticket: TicketListItem) {
+  if (ticket.categoryLabel && ticket.categoryLabel !== '—') {
+    const first = ticket.categoryLabel.split(' · ')[0]?.trim()
+    if (first) return first
+  }
   if (typeof ticket.sourceCategory === 'string' && ticket.sourceCategory.trim()) {
-    return ticket.sourceCategory
+    const first = ticket.sourceCategory.split(/[;,|]/)[0]?.trim()
+    if (first) return first
   }
   if (ticket.category && ticket.category in CATEGORY_LABELS) {
     return CATEGORY_LABELS[ticket.category as keyof typeof CATEGORY_LABELS]
   }
   return ticket.category || '—'
+}
+
+function summaryText(ticket: TicketListItem) {
+  if (typeof ticket.aiSummary === 'string' && ticket.aiSummary.trim()) {
+    return ticket.aiSummary.trim()
+  }
+  if (typeof ticket.summary === 'string' && ticket.summary.trim()) {
+    return ticket.summary.trim()
+  }
+  return cleanSubjectLine(ticket.subject)
+}
+
+function slaFor(ticket: { awaiting?: 'us' | 'customer' | null, replyDueAt?: string | null }) {
+  return replyDueLabel(ticket.awaiting, ticket.replyDueAt)
+}
+
+function slaClass(tone: 'overdue' | 'urgent' | 'muted') {
+  if (tone === 'overdue') return 'text-black font-medium'
+  if (tone === 'urgent') return 'font-medium text-[#F6D736]'
+  return 'text-[#727487]'
+}
+
+function ownerLabel(ticket: TicketListItem) {
+  return ticket.ownerName?.trim() || 'nieprzypisana'
+}
+
+function ownerInitials(ticket: TicketListItem) {
+  const name = ticket.ownerName?.trim()
+  if (!name) return ''
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
+  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase()
+}
+
+async function takeNext() {
+  const list = data.value?.tickets || []
+  const next = list.find(t => t.awaiting === 'us') || list[0]
+  if (!next) return
+  if (!next.ownerId && me.value?.agentId) {
+    try {
+      await $fetch(`/api/tickets/${next.id}`, {
+        method: 'PATCH',
+        body: { ownerId: me.value.agentId }
+      })
+      await refresh()
+      await refreshCounts()
+    } catch {
+      // otwórz mimo błędu przypisania
+    }
+  }
+  selectTicket(next.id)
 }
 
 const pageLabel = computed(() => {
@@ -148,30 +472,54 @@ const pageLabel = computed(() => {
           · spełnione {{ data?.summary.slaMet ?? 0 }}
         </p>
       </div>
-      <UButton to="/tickets/new">
-        Nowa sprawa
-      </UButton>
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          color="neutral"
+          variant="outline"
+          :disabled="pending || !(data?.tickets?.length)"
+          @click="takeNext"
+        >
+          Weź następną
+        </UButton>
+        <UButton to="/tickets/new">
+          Nowa sprawa
+        </UButton>
+      </div>
     </div>
 
-    <div class="mt-6 flex flex-wrap gap-3">
+    <div class="mt-6 flex flex-wrap items-center gap-3">
       <USelect
         v-model="department"
         :items="departmentItems"
         value-key="value"
         class="w-52"
       />
-      <USelect
-        v-model="queue"
-        :items="queueItems"
-        value-key="value"
-        class="w-48"
-      />
-      <USelect
-        v-model="status"
-        :items="statusItems"
-        value-key="value"
-        class="w-40"
-      />
+      <form
+        class="flex min-w-[16rem] flex-1 flex-wrap gap-2"
+        @submit.prevent="applySearch"
+      >
+        <UInput
+          v-model="searchInput"
+          placeholder="Szukaj: transakcja, mail, nazwa, treść…"
+          class="min-w-[14rem] flex-1"
+        />
+        <UButton
+          type="submit"
+          color="neutral"
+          variant="outline"
+        >
+          Szukaj
+        </UButton>
+        <UButton
+          v-if="searchQ"
+          type="button"
+          color="neutral"
+          variant="ghost"
+          @click="clearSearch"
+        >
+          Wyczyść
+        </UButton>
+      </form>
     </div>
 
     <p
@@ -188,103 +536,373 @@ const pageLabel = computed(() => {
       Ładowanie…
     </div>
 
-    <template v-else>
-      <div
-        v-if="data"
-        class="mt-4 flex flex-wrap items-center justify-between gap-3"
+    <div
+      v-else
+      class="mt-6 flex flex-col gap-6 min-[1100px]:flex-row"
+    >
+      <nav
+        v-if="!searchQ"
+        class="w-full shrink-0 min-[1100px]:w-56"
       >
-        <p class="text-sm text-muted">
-          {{ pageLabel }}
-        </p>
-        <div class="flex gap-2">
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="page <= 1 || pending"
-            @click="page -= 1"
+        <ul class="space-y-1">
+          <li
+            v-for="item in queueNav"
+            :key="item.id"
           >
-            Poprzednia
-          </UButton>
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="page >= (data.totalPages || 1) || pending"
-            @click="page += 1"
-          >
-            Następna
-          </UButton>
+            <button
+              type="button"
+              class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors"
+              :class="workQueue === item.id
+                ? 'bg-black text-white'
+                : 'text-black hover:bg-[#F8F8F8]'"
+              @click="workQueue = item.id; selectedId = null"
+            >
+              <span>{{ item.label }}</span>
+              <span
+                class="tabular-nums"
+                :class="workQueue === item.id ? 'text-white/80' : 'text-[#727487]'"
+              >
+                {{ item.count }}
+              </span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="min-w-0 flex-1">
+        <div
+          v-if="data"
+          class="flex flex-wrap items-center justify-between gap-3"
+        >
+          <p class="text-sm text-muted">
+            <span v-if="searchQ">Wyniki dla „{{ searchQ }}” · </span>
+            {{ pageLabel }}
+          </p>
+          <div class="flex gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :disabled="page <= 1 || pending"
+              @click="page -= 1"
+            >
+              Poprzednia
+            </UButton>
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :disabled="page >= (data.totalPages || 1) || pending"
+              @click="page += 1"
+            >
+              Następna
+            </UButton>
+          </div>
         </div>
+
+        <UCard class="mt-3">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="text-muted">
+                <tr>
+                  <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                    SLA
+                  </th>
+                  <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                    Transakcja
+                  </th>
+                  <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                    Kategoria
+                  </th>
+                  <th class="pb-3 pr-4 font-medium">
+                    Podsumowanie
+                  </th>
+                  <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                    Dział
+                  </th>
+                  <th class="pb-3 pr-4 font-medium whitespace-nowrap">
+                    Prowadzi
+                  </th>
+                  <th class="pb-3 font-medium whitespace-nowrap">
+                    Od kiedy
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="ticket in data?.tickets || []"
+                  :key="ticket.id"
+                  class="cursor-pointer border-t border-default transition-colors hover:bg-[#F8F8F8]"
+                  :class="selectedId === ticket.id ? 'bg-[#F8F8F8]' : ''"
+                  @click="selectTicket(ticket.id)"
+                >
+                  <td
+                    class="py-3 pr-4 whitespace-nowrap"
+                    :class="slaClass(slaFor(ticket).tone)"
+                  >
+                    {{ slaFor(ticket).text }}
+                  </td>
+                  <td class="pr-4 whitespace-nowrap font-medium">
+                    {{ shortTransactionId(ticket.relatedTransactionId) }}
+                  </td>
+                  <td class="pr-4 whitespace-nowrap">
+                    {{ categoryText(ticket) }}
+                  </td>
+                  <td class="pr-4 max-w-md">
+                    <p class="line-clamp-2">
+                      {{ summaryText(ticket) }}
+                    </p>
+                  </td>
+                  <td class="pr-4 whitespace-nowrap">
+                    {{ ticket.departmentLabel || '—' }}
+                  </td>
+                  <td class="pr-4 whitespace-nowrap">
+                    <span class="inline-flex items-center gap-2">
+                      <span
+                        v-if="ticket.ownerName"
+                        class="inline-flex size-6 items-center justify-center rounded-full bg-white text-[10px] font-medium"
+                      >
+                        {{ ownerInitials(ticket) }}
+                      </span>
+                      <span
+                        v-else
+                        class="inline-block size-6 rounded-full border border-dashed border-black/40"
+                      />
+                      <span :class="ticket.ownerName ? '' : 'text-[#727487]'">
+                        {{ ownerLabel(ticket) }}
+                      </span>
+                    </span>
+                  </td>
+                  <td class="whitespace-nowrap">
+                    {{ hangingSinceLabel(ticket.firstContactAt) }}
+                  </td>
+                </tr>
+                <tr v-if="!data?.tickets?.length">
+                  <td
+                    colspan="7"
+                    class="py-8 text-center text-muted"
+                  >
+                    {{ searchQ ? 'Brak wyników.' : 'Brak spraw w tej kolejce.' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </UCard>
       </div>
 
-      <UCard class="mt-3">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead class="text-muted">
-              <tr>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Transakcja
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Kategoria
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Dział
-                </th>
-                <th class="pb-3 pr-4 font-medium whitespace-nowrap">
-                  Od kiedy wisi
-                </th>
-                <th class="pb-3 pr-4 font-medium">
-                  Podsumowanie
-                </th>
-                <th class="pb-3 font-medium whitespace-nowrap">
-                  Wisi na
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="ticket in data?.tickets || []"
-                :key="ticket.id"
-                class="border-t border-default"
-              >
-                <td class="py-3 pr-4 whitespace-nowrap">
-                  <NuxtLink
-                    :to="`/tickets/${ticket.id}`"
-                    class="font-medium hover:underline"
-                  >
-                    {{ ticket.relatedTransactionId || '—' }}
-                  </NuxtLink>
-                </td>
-                <td class="pr-4 whitespace-nowrap">
-                  {{ categoryText(ticket) }}
-                </td>
-                <td class="pr-4 whitespace-nowrap">
-                  {{ ticket.departmentLabel || '—' }}
-                </td>
-                <td class="pr-4 whitespace-nowrap">
-                  {{ hangingSinceLabel(ticket.firstContactAt) }}
-                </td>
-                <td class="pr-4 max-w-md truncate">
-                  {{ ticket.summary || ticket.subject || '—' }}
-                </td>
-                <td class="whitespace-nowrap">
-                  {{ ticket.ownerName || '—' }}
-                </td>
-              </tr>
-              <tr v-if="!data?.tickets?.length">
-                <td
-                  colspan="6"
-                  class="py-8 text-center text-muted"
-                >
-                  Brak spraw w tym filtrze.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <aside
+        v-if="selectedId"
+        class="w-full shrink-0 border-t border-default pt-4 min-[1100px]:w-[420px] min-[1100px]:border-t-0 min-[1100px]:border-l min-[1100px]:pt-0 min-[1100px]:pl-6"
+      >
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs text-muted">
+              {{ shortTransactionId(panelTicket?.relatedTransactionId) }}
+              · {{ panelTicket?.categoryLabel || panelTicket?.sourceCategory || panelTicket?.category || '—' }}
+            </p>
+            <p
+              class="mt-1 text-sm"
+              :class="slaClass(slaFor({ awaiting: panelTicket?.awaiting, replyDueAt: panelTicket?.replyDueAt }).tone)"
+            >
+              {{ slaFor({ awaiting: panelTicket?.awaiting, replyDueAt: panelTicket?.replyDueAt }).text }}
+            </p>
+          </div>
+          <div class="flex gap-1">
+            <UButton
+              :to="`/tickets/${selectedId}`"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+            >
+              Pełna
+            </UButton>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              @click="closePanel"
+            >
+              Zamknij
+            </UButton>
+          </div>
         </div>
-      </UCard>
-    </template>
+
+        <p
+          v-if="panelPending"
+          class="mt-4 text-sm text-muted"
+        >
+          Ładowanie sprawy…
+        </p>
+        <p
+          v-else-if="panelError"
+          class="mt-4 text-sm text-error"
+        >
+          {{ panelError }}
+        </p>
+        <template v-else-if="panelTicket">
+          <h2 class="mt-3 text-lg font-medium tracking-tight">
+            {{ panelTicket.contact?.display_name || panelTicket.contactName || '—' }}
+          </h2>
+          <p class="mt-1 text-sm text-muted">
+            {{ panelTicket.departmentLabel || '—' }}
+            · {{ panelTicket.ownerName || 'nieprzypisana' }}
+            · od {{ panelTicket.firstContactAt ? hangingSinceLabel(panelTicket.firstContactAt) : '—' }}
+          </p>
+
+          <div class="mt-4 space-y-3">
+            <UFormField label="Dział">
+              <div class="flex gap-2">
+                <USelect
+                  v-model="migrateDepartment"
+                  :items="departmentSelectItems"
+                  value-key="value"
+                  class="flex-1"
+                />
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  :loading="migrating"
+                  :disabled="migrateDepartment === panelTicket.department"
+                  @click="saveDepartment"
+                >
+                  Przenieś
+                </UButton>
+              </div>
+            </UFormField>
+            <p
+              v-if="migrateError"
+              class="text-sm text-error"
+            >
+              {{ migrateError }}
+            </p>
+            <UFormField label="Prowadzi">
+              <div class="flex gap-2">
+                <USelect
+                  v-model="panelOwnerId"
+                  :items="ownerItems"
+                  value-key="value"
+                  class="flex-1"
+                />
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  :loading="savingOwner"
+                  :disabled="panelOwnerId === (panelTicket.ownerId || 'unassigned')"
+                  @click="saveOwner"
+                >
+                  Zapisz
+                </UButton>
+              </div>
+            </UFormField>
+            <p
+              v-if="ownerError"
+              class="text-sm text-error"
+            >
+              {{ ownerError }}
+            </p>
+          </div>
+
+          <div class="mt-5">
+            <p class="text-xs font-medium text-muted">
+              Ostatnie zdarzenia
+            </p>
+            <ol class="mt-2 space-y-3">
+              <li
+                v-for="event in panelEvents"
+                :key="event.id"
+                class="rounded-md bg-[#F8F8F8] p-3 text-sm"
+              >
+                <p class="text-xs text-muted">
+                  {{ event.senderType }}
+                  · {{ new Date(event.createdAt).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }) }}
+                </p>
+                <p class="mt-1 line-clamp-4 whitespace-pre-wrap">
+                  {{ event.body }}
+                </p>
+              </li>
+              <li
+                v-if="!panelEvents.length"
+                class="text-sm text-muted"
+              >
+                Brak zdarzeń.
+              </li>
+            </ol>
+            <NuxtLink
+              :to="`/tickets/${selectedId}`"
+              class="mt-2 inline-block text-sm hover:underline"
+            >
+              Pokaż całą rozmowę ({{ panelTicket.events?.length || 0 }})
+            </NuxtLink>
+          </div>
+
+          <form
+            v-if="panelTicket.status !== 'closed'"
+            class="mt-5 space-y-2"
+            @submit.prevent="sendPanelReply"
+          >
+            <UTextarea
+              v-model="replyBody"
+              :rows="4"
+              placeholder="Odpowiedź do klienta…"
+            />
+            <p
+              v-if="replyError"
+              class="text-sm text-error"
+            >
+              {{ replyError }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                type="submit"
+                :loading="sending"
+                :disabled="!replyBody.trim()"
+              >
+                Wyślij
+              </UButton>
+            </div>
+          </form>
+
+          <div
+            v-if="panelTicket.status !== 'closed'"
+            class="mt-5 space-y-2 border-t border-default pt-4"
+          >
+            <p class="text-xs font-medium text-muted">
+              Zamknij sprawę
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <USelect
+                v-model="closeForm.category"
+                :items="closeCategoryItems"
+                value-key="value"
+                class="w-40"
+              />
+              <USelect
+                v-model="closeForm.priority"
+                :items="closePriorityItems"
+                value-key="value"
+                class="w-36"
+              />
+              <UButton
+                color="neutral"
+                variant="outline"
+                :loading="closing"
+                @click="closePanelTicket"
+              >
+                Zamknij sprawę
+              </UButton>
+            </div>
+            <p
+              v-if="closeError"
+              class="text-sm text-error"
+            >
+              {{ closeError }}
+            </p>
+          </div>
+        </template>
+      </aside>
+    </div>
   </div>
 </template>

@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Nieznany status połączenia.' })
   }
   const ticketId = getRouterParam(event, 'id') || ''
-  const actor = { role: user.role, agentId: user.agentId, name: user.name }
+  const actor = { role: user.role, agentId: user.agentId, department: user.department, name: user.name }
   const isCustomerMail = body.channel === 'email' && body.direction === 'to_customer' && body.senderType === 'agent'
 
   // Najpierw zapis na osi (audyt #10), potem wysyłka — żeby klient nie dostał maila bez śladu w sprawie.

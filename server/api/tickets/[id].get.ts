@@ -5,7 +5,8 @@ export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const ticket = await getTicket(getRouterParam(event, 'id') || '', {
     role: user.role,
-    agentId: user.agentId
+    agentId: user.agentId,
+    department: user.department
   })
   if (!ticket) {
     throw createError({ statusCode: 404, statusMessage: 'Nie ma takiej sprawy.' })

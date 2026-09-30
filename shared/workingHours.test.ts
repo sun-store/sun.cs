@@ -5,7 +5,8 @@ import {
   fromZonedTime,
   holidayOn,
   isWithinBusinessHours,
-  polishPublicHolidays
+  polishPublicHolidays,
+  addBusinessMilliseconds
 } from './workingHours'
 
 describe('polish public holidays', () => {
@@ -46,5 +47,11 @@ describe('business hours in Europe/Warsaw', () => {
     const start = fromZonedTime(2026, 4, 30, 16, 0, 0)
     const end = fromZonedTime(2026, 5, 4, 10, 0, 0)
     expect(businessSecondsBetween(start, end)).toBe((60 + 60) * 60)
+  })
+
+  it('adds two business hours from Friday 16:30 to Monday 10:30', () => {
+    const friday = fromZonedTime(2026, 9, 25, 16, 30, 0)
+    const due = addBusinessMilliseconds(friday, 2 * 60 * 60 * 1000)
+    expect(due.toISOString()).toBe(fromZonedTime(2026, 9, 28, 10, 30, 0).toISOString())
   })
 })

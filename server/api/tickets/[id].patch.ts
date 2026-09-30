@@ -63,6 +63,7 @@ export default defineEventHandler(async (event) => {
     const ticket = await updateTicket(getRouterParam(event, 'id') || '', patch, {
       role: user.role,
       agentId: user.agentId,
+      department: user.department,
       name: user.name
     })
     if (!ticket) {

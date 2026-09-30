@@ -4,6 +4,7 @@ import { isUuid } from '../../utils/uuid'
 import { canBrowseAllDepartments } from '../../../shared/access'
 import { CHANNELS, TICKET_STATUSES, type Channel, type TicketStatus } from '../../../shared/domain'
 import { DEPARTMENTS, isDepartment, type Department } from '../../../shared/departments'
+import { isTicketQueue, type TicketQueue } from '../../../shared/ticket-queues'
 import { TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../../shared/text-bounds'
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
@@ -12,8 +13,8 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
     : null
 }
 
-function parseStatus(value: unknown): TicketStatus | 'all' {
-  if (value == null || value === '') return 'open'
+function parseStatus(value: unknown, whenQueueOrSearch: boolean): TicketStatus | 'all' {
+  if (value == null || value === '') return whenQueueOrSearch ? 'all' : 'open'
   if (value === 'all') return 'all'
   const parsed = oneOf(value, TICKET_STATUSES)
   if (!parsed) throw createError({ statusCode: 400, statusMessage: 'Nieznany status.' })
@@ -58,12 +59,32 @@ function parseDepartment(value: unknown): Department | 'all' {
   throw createError({ statusCode: 400, statusMessage: 'Nieznany dział.' })
 }
 
+function parseQueue(value: unknown): TicketQueue | undefined {
+  if (value == null || value === '') return undefined
+  if (isTicketQueue(value)) return value
+  throw createError({ statusCode: 400, statusMessage: 'Nieznana kolejka.' })
+}
+
+function parseQ(value: unknown): string | undefined {
+  if (value == null || value === '') return undefined
+  if (typeof value !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'Nieprawidłowe wyszukiwanie.' })
+  }
+  const trimmed = value.trim()
+  if (trimmed.length > 200) {
+    throw createError({ statusCode: 400, statusMessage: 'Zapytanie za długie.' })
+  }
+  return trimmed || undefined
+}
+
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
-  const actor: TicketActor = { role: user.role, agentId: user.agentId }
+  const actor: TicketActor = { role: user.role, agentId: user.agentId, department: user.department }
   const query = getQuery(event)
 
-  const status = parseStatus(query.status)
+  const q = parseQ(query.q)
+  const queue = q ? undefined : parseQueue(query.queue)
+  const status = parseStatus(query.status, Boolean(queue || q))
   const channel = parseChannel(query.channel)
   const page = parsePage(query.page)
   const pageSize = parsePageSize(query.pageSize)
@@ -78,6 +99,8 @@ export default defineEventHandler(async (event) => {
     channel,
     ownerId,
     department,
+    queue,
+    q,
     page,
     pageSize
   }, actor)

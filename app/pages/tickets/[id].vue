@@ -401,7 +401,7 @@ async function clearOwner() {
 
         <UCard v-if="data.status !== 'closed' && data.ownerId">
           <template #header>
-            Właściciel
+            Prowadzi
           </template>
           <p class="mb-3 text-sm text-muted">
             Zdjęcie właściciela wrzuca sprawę do nieprzypisanych (urlop, zmiana dyżuru).
