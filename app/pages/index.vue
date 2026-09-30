@@ -2,6 +2,7 @@
 import {
   CATEGORIES,
   CATEGORY_LABELS,
+  CHANNEL_LABELS,
   PRIORITY_LABELS,
   TICKET_PRIORITIES,
   type AppRole,
@@ -22,6 +23,12 @@ import {
   shortTransactionId
 } from '~~/shared/reply-due-label'
 import type { SlaBadge } from '~~/shared/sla-label'
+import {
+  defaultThreadChannel,
+  groupEventsByThreadChannel,
+  THREAD_CHANNELS,
+  type ThreadChannel
+} from '~~/shared/thread-channels'
 
 const { t, locale, messages } = useAppLocale()
 
@@ -273,9 +280,28 @@ watch([workQueue, department, searchQ, selectedId, page], () => {
   syncUrl()
 })
 
-const panelEvents = computed(() => {
-  const events = panelTicket.value?.events || []
-  return events.slice(-3).reverse()
+const panelChannel = ref<ThreadChannel>('chat')
+
+const eventsByChannel = computed(() =>
+  groupEventsByThreadChannel(panelTicket.value?.events || [])
+)
+
+const panelChannelTabs = computed(() =>
+  THREAD_CHANNELS.map(channel => ({
+    channel,
+    label: channel === 'chat'
+      ? t('inbox', 'channelChat')
+      : channel === 'email'
+        ? t('inbox', 'channelEmail')
+        : t('inbox', 'channelPhone'),
+    count: eventsByChannel.value[channel].length
+  }))
+)
+
+const panelEvents = computed(() => eventsByChannel.value[panelChannel.value] || [])
+
+watch(panelTicket, (ticket) => {
+  panelChannel.value = defaultThreadChannel(ticket?.channel, eventsByChannel.value)
 })
 
 const migrateDepartment = ref<Department>('cs')
@@ -378,7 +404,7 @@ async function sendPanelReply() {
       body: {
         body: replyBody.value,
         direction: 'to_customer',
-        channel: panelTicket.value?.channel || 'email',
+        channel: panelChannel.value,
         senderType: 'agent'
       }
     })
@@ -482,12 +508,17 @@ watch(selectedId, () => {
   showOriginal.value = false
 })
 
+watch(panelChannel, () => {
+  translatedBodies.value = {}
+  showOriginal.value = false
+})
+
 const translatedBodies = ref<Record<string, string>>({})
 const showOriginal = ref(false)
 const translating = ref(false)
 
 async function translatePanel() {
-  if (!aiEnabled.value || !panelTicket.value?.events?.length) {
+  if (!aiEnabled.value || !panelEvents.value.length) {
     translatedBodies.value = {}
     return
   }
@@ -1102,17 +1133,33 @@ const pageLabel = computed(() => {
                 </UButton>
               </div>
             </div>
-            <ol class="mt-2 space-y-3">
+            <div class="mt-2 flex gap-1 border-b border-default">
+              <button
+                v-for="tab in panelChannelTabs"
+                :key="tab.channel"
+                type="button"
+                class="rounded-t px-2.5 py-1.5 text-xs font-medium transition-colors"
+                :class="panelChannel === tab.channel
+                  ? 'bg-[#F8F8F8] text-black'
+                  : 'text-muted hover:text-black'"
+                @click="panelChannel = tab.channel"
+              >
+                {{ tab.label }}
+                <span class="ms-1 text-[#727487]">{{ tab.count }}</span>
+              </button>
+            </div>
+            <ol class="mt-0 max-h-80 space-y-3 overflow-y-auto rounded-b-md bg-[#F8F8F8] p-3">
               <li
                 v-for="event in panelEvents"
                 :key="event.id"
-                class="rounded-md bg-[#F8F8F8] p-3 text-sm"
+                class="rounded-md border border-default/60 bg-white p-3 text-sm"
               >
                 <p class="text-xs text-muted">
                   {{ event.senderType }}
+                  · {{ CHANNEL_LABELS[event.channel as keyof typeof CHANNEL_LABELS] || event.channel }}
                   · {{ new Date(event.createdAt).toLocaleString(locale === 'en' ? 'en-GB' : 'pl-PL', { timeZone: 'Europe/Warsaw' }) }}
                 </p>
-                <p class="mt-1 line-clamp-4 whitespace-pre-wrap">
+                <p class="mt-1 whitespace-pre-wrap">
                   {{ showOriginal ? event.body : (translatedBodies[event.id] || event.body) }}
                 </p>
               </li>
@@ -1120,11 +1167,11 @@ const pageLabel = computed(() => {
                 v-if="!panelEvents.length"
                 class="text-sm text-muted"
               >
-                {{ t('inbox', 'noEvents') }}
+                {{ t('inbox', 'noChannelEvents') }}
               </li>
             </ol>
             <NuxtLink
-              :to="`/tickets/${selectedId}`"
+              :to="`/tickets/${selectedId}?channel=${panelChannel}`"
               class="mt-2 inline-block text-sm hover:underline"
             >
               {{ t('inbox', 'showThread') }} ({{ panelTicket.events?.length || 0 }})

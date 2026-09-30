@@ -41,6 +41,10 @@ export type LocaleMessages = {
     leads: string
     department: string
     recentEvents: string
+    channelChat: string
+    channelEmail: string
+    channelPhone: string
+    noChannelEvents: string
     showThread: string
     replyPlaceholder: string
     send: string
@@ -164,8 +168,12 @@ export const pl: LocaleMessages = {
     save: 'Zapisz',
     leads: 'Prowadzi',
     department: 'Dział',
-    recentEvents: 'Ostatnie zdarzenia',
-    showThread: 'Pokaż całą rozmowę',
+    recentEvents: 'Rozmowa',
+    channelChat: 'Czat',
+    channelEmail: 'E-mail',
+    channelPhone: 'Telefon',
+    noChannelEvents: 'Brak wiadomości w tym kanale.',
+    showThread: 'Pokaż całą sprawę',
     replyPlaceholder: 'Odpowiedź do klienta…',
     send: 'Wyślij',
     closeCase: 'Zamknij sprawę',
@@ -288,8 +296,12 @@ export const en: LocaleMessages = {
     save: 'Save',
     leads: 'Owner',
     department: 'Department',
-    recentEvents: 'Recent events',
-    showThread: 'Show full thread',
+    recentEvents: 'Conversation',
+    channelChat: 'Chat',
+    channelEmail: 'Email',
+    channelPhone: 'Phone',
+    noChannelEvents: 'No messages in this channel.',
+    showThread: 'Open full case',
     replyPlaceholder: 'Reply to customer…',
     send: 'Send',
     closeCase: 'Close case',

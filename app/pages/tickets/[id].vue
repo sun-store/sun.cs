@@ -13,6 +13,12 @@ import {
   DEPARTMENT_LABELS,
   type Department
 } from '~~/shared/departments'
+import {
+  defaultThreadChannel,
+  groupEventsByThreadChannel,
+  THREAD_CHANNELS,
+  type ThreadChannel
+} from '~~/shared/thread-channels'
 
 const route = useRoute()
 
@@ -62,6 +68,34 @@ type TicketDetail = {
 
 const { data, refresh, error } = await useFetch<TicketDetail>(() => `/api/tickets/${route.params.id}`)
 
+const { t, locale } = useAppLocale()
+
+const threadChannel = ref<ThreadChannel>('chat')
+const eventsByChannel = computed(() =>
+  groupEventsByThreadChannel(data.value?.events || [])
+)
+const channelTabs = computed(() =>
+  THREAD_CHANNELS.map(channel => ({
+    channel,
+    label: channel === 'chat'
+      ? t('inbox', 'channelChat')
+      : channel === 'email'
+        ? t('inbox', 'channelEmail')
+        : t('inbox', 'channelPhone'),
+    count: eventsByChannel.value[channel].length
+  }))
+)
+const visibleEvents = computed(() => eventsByChannel.value[threadChannel.value] || [])
+
+watch(data, (ticket) => {
+  const fromQuery = String(route.query.channel || '')
+  if (fromQuery === 'chat' || fromQuery === 'email' || fromQuery === 'phone') {
+    threadChannel.value = fromQuery
+    return
+  }
+  threadChannel.value = defaultThreadChannel(ticket?.channel, eventsByChannel.value)
+})
+
 const reply = reactive({
   body: '',
   direction: 'to_customer' as typeof MESSAGE_DIRECTIONS[number],
@@ -77,8 +111,14 @@ const closeError = ref('')
 const sending = ref(false)
 const closing = ref(false)
 
+watch(threadChannel, (channel) => {
+  reply.channel = channel
+})
+
 watch(() => data.value?.channel, (channel) => {
-  if (channel) reply.channel = channel as Channel
+  if (channel && !eventsByChannel.value[threadChannel.value]?.length) {
+    reply.channel = channel as Channel
+  }
 }, { immediate: true })
 
 const directionItems = [
@@ -245,19 +285,41 @@ async function clearOwner() {
           <span v-if="data.subject"> · {{ data.subject }}</span>
         </p>
 
-        <ol class="mt-6 space-y-4">
+        <div class="mt-6 flex gap-1 border-b border-default">
+          <button
+            v-for="tab in channelTabs"
+            :key="tab.channel"
+            type="button"
+            class="rounded-t px-3 py-2 text-sm font-medium transition-colors"
+            :class="threadChannel === tab.channel
+              ? 'bg-[#F8F8F8] text-black'
+              : 'text-muted hover:text-black'"
+            @click="threadChannel = tab.channel"
+          >
+            {{ tab.label }}
+            <span class="ms-1 text-[#727487]">{{ tab.count }}</span>
+          </button>
+        </div>
+
+        <ol class="mt-0 max-h-[32rem] space-y-4 overflow-y-auto rounded-b-lg bg-[#F8F8F8] p-4">
           <li
-            v-for="event in data.events"
+            v-for="event in visibleEvents"
             :key="event.id"
-            class="rounded-lg border border-default p-4"
+            class="rounded-lg border border-default bg-white p-4"
           >
             <p class="text-xs text-muted">
               {{ eventLabel(event) }}
-              · {{ new Date(event.createdAt).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }) }}
+              · {{ new Date(event.createdAt).toLocaleString(locale === 'en' ? 'en-GB' : 'pl-PL', { timeZone: 'Europe/Warsaw' }) }}
             </p>
             <p class="mt-2 whitespace-pre-wrap">
               {{ event.body }}
             </p>
+          </li>
+          <li
+            v-if="!visibleEvents.length"
+            class="text-sm text-muted"
+          >
+            {{ t('inbox', 'noChannelEvents') }}
           </li>
         </ol>
 
