@@ -60,7 +60,7 @@ function parseDepartment(value: unknown): Department | 'all' {
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
-  const actor: TicketActor = { role: user.role, agentId: user.agentId }
+  const actor: TicketActor = { role: user.role, agentId: user.agentId, department: user.department }
   const query = getQuery(event)
 
   const status = parseStatus(query.status)

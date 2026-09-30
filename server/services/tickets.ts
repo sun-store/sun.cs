@@ -14,14 +14,19 @@ import {
   STATUS_LABELS,
   splitHubspotCategories
 } from '../../shared/domain'
-import { seesAllTickets } from '../../shared/access'
+import { resolveTicketAccess } from '../../shared/access'
 import {
   DEPARTMENT_LABELS,
   isDepartment,
   resolveDepartment,
   type Department
 } from '../../shared/departments'
+import {
+  replyClockAfterAgentToCustomer,
+  replyClockAfterCustomerMessage
+} from '../../shared/reply-clock'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
+import { statusAfterEvent } from '../../shared/ticket-status'
 import type { IdentifierInput } from '../../shared/resolveContact'
 import { boundedText, optionalText, TEXT_LIMITS, TICKET_LIST_PAGE_SIZE, TICKET_LIST_PAGE_SIZE_MAX } from '../../shared/text-bounds'
 import { isUuid } from '../utils/uuid'
@@ -32,22 +37,25 @@ import { loadCustomerOrders } from './orders'
 export type TicketActor = {
   role: AppRole
   agentId: string | null
+  department?: Department | null
   name?: string
 }
 
 const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
             t.related_transaction_id, t.owner_id, t.subject, t.created_at, t.first_contact_at,
             t.first_agent_reply_at, t.closed_at, t.hubspot_ticket_id, t.hubspot_thread_id,
-            t.source_category, t.department`
+            t.source_category, t.department, t.awaiting, t.reply_due_at`
 
 const CALL_STATUS_SQL = `(select e.call_status from ticket_events e
               where e.ticket_id = t.id and e.call_status is not null
               order by e.created_at asc limit 1)`
 
 function accessSql(actor: TicketActor | undefined, params: unknown[], alias = 't'): string {
-  if (!actor || seesAllTickets(actor.role)) return 'true'
-  params.push(actor.agentId)
-  return `${alias}.owner_id = $${params.length}::uuid`
+  const access = resolveTicketAccess(actor)
+  if (access.type === 'all') return 'true'
+  if (access.type === 'none') return 'false'
+  params.push(access.department)
+  return `${alias}.department = $${params.length}`
 }
 
 export type TicketRow = {
@@ -71,6 +79,8 @@ export type TicketRow = {
   hubspot_thread_id?: string | null
   source_category?: string | null
   department?: Department | null
+  awaiting?: 'us' | 'customer' | null
+  reply_due_at?: Date | null
 }
 
 export type EventRow = {
@@ -333,8 +343,9 @@ export async function addEvent(ticketId: string, input: {
   const tickets = await neonQuery<{
     first_agent_reply_at: Date | null
     closed_at: Date | null
+    origin_channel: Channel
   }>(
-    `select first_agent_reply_at, closed_at from tickets t where t.id = $1::uuid and ${access}`,
+    `select first_agent_reply_at, closed_at, origin_channel from tickets t where t.id = $1::uuid and ${access}`,
     params
   )
   if (!tickets[0]) return null
@@ -355,14 +366,29 @@ export async function addEvent(ticketId: string, input: {
     firstReply = lockFirstAgentReply(firstReply, now)
   }
 
-  // Klient napisał → Otwarta. Agent/bot do klienta → Czeka. Notatki / do sprzedawcy nie zmieniają statusu.
-  const nextStatus = tickets[0].closed_at
-    ? null
-    : input.senderType === 'customer'
-      ? 'open'
-      : ((input.senderType === 'agent' || input.senderType === 'bot') && input.direction === 'to_customer'
-          ? 'waiting'
-          : null)
+  const nextStatus = statusAfterEvent({
+    senderType: input.senderType,
+    direction: input.direction,
+    closed: Boolean(tickets[0].closed_at)
+  })
+
+  let awaiting: 'us' | 'customer' | null = null
+  let replyDueAt: Date | null = null
+  let clockTouched = false
+  if (input.senderType === 'customer') {
+    const clock = replyClockAfterCustomerMessage(input.channel || tickets[0].origin_channel, now)
+    awaiting = clock.awaiting
+    replyDueAt = clock.replyDueAt
+    clockTouched = true
+  } else if (
+    (input.senderType === 'agent' || input.senderType === 'bot')
+    && input.direction === 'to_customer'
+  ) {
+    const clock = replyClockAfterAgentToCustomer()
+    awaiting = clock.awaiting
+    replyDueAt = null
+    clockTouched = true
+  }
 
   await neonQuery(
     `update tickets
@@ -372,9 +398,11 @@ export async function addEvent(ticketId: string, input: {
            when $4::text is null then status
            else $4::ticket_status
          end,
+         awaiting = case when $5::boolean then $6 else awaiting end,
+         reply_due_at = case when $5::boolean then $7 else reply_due_at end,
          business_changed_at = $3
      where id = $1`,
-    [ticketId, firstReply, now, nextStatus]
+    [ticketId, firstReply, now, nextStatus, clockTouched, awaiting, replyDueAt]
   )
 
   return getTicket(ticketId, actor)
@@ -650,6 +678,8 @@ function serializeTicket(row: TicketRow, events: EventRow[] = []) {
     sourceCategory: row.source_category ?? null,
     department,
     departmentLabel: DEPARTMENT_LABELS[department],
+    awaiting: row.awaiting ?? null,
+    replyDueAt: row.reply_due_at ?? null,
     priority: row.priority,
     relatedTransactionId: row.related_transaction_id,
     subject: row.subject,

@@ -58,7 +58,7 @@ Przed oddaniem każdej części: `sfw npm run lint`, `sfw npm run typecheck`, `s
 - [x] Wiadomość **od klienta** (`sender_type = customer`) → `status = open`.
 - [x] Odpowiedź agenta/bota **do klienta** → `status = waiting`.
 - [x] Notatka / wiadomość do sprzedawcy **nie zmienia** statusu.
-- [ ] Test: sprawa w `waiting` + event klienta → wraca do `open` (dodać w `shared/` lub teście serwisowym, jeśli jeszcze nie ma).
+- [x] Test: `shared/ticket-status.test.ts`.
 
 **Kryterium:** klient pisze w sprawie „Czeka” → lista „Otwarte” / kolejka „Do odpowiedzi” znów ją pokazuje.
 
@@ -70,40 +70,14 @@ Obecnie `accessSql` ogranicza **agenta** do `owner_id = agentId`. Docelowo ogran
 
 ### 2.1 Pole działu na pracowniku
 
-- [ ] Zmergować `cursor/staff-department` (migracja `0008`, `/team`, `department` w sesji `/api/me`), albo równoważna implementacja na `main`.
-- [ ] `staff.department` i `allowlist.department`: ten sam enum co `tickets.department`, domyślnie `cs`.
-- [ ] Edycja na `/team` (tylko admin): rola + dział.
+- [x] `staff.department` + `allowlist.department` + `/team` (branch `cursor/staff-department`, migracja `0008`).
+- [ ] Zmergować na `main` / Vercel przed wpuszczeniem działów spoza Support.
 
 ### 2.2 `accessSql` (przepisać)
 
-Actor musi mieć `department` (już w `SessionUser` na branchu staff-department).
-
-| Kto | Zakres SQL |
-| --- | --- |
-| Brak aktora (import, inbound, cron) | wszystko (`true`) |
-| `role = admin` | wszystko |
-| `department = cs` (Support), także agent Support | wszystko |
-| Inny dział | `t.department = $n` (dział osoby) |
-| ~~`role = agent` → tylko `owner_id`~~ | **usuń** ten warunek |
-
-Lead: w produkcie „admin i Support widzą wszystko”. Lead CS zwykle ma `department = cs` albo `seesAllTickets` — utrzymaj: **admin OR lead OR department = cs → wszystko**, żeby lead bez `cs` też widział pełnię (jak dziś `seesAllTickets`).
-
-Zaktualizuj `shared/access.ts`:
-
-- `seesAllTickets(role)` — zostaje dla admin/lead **albo** zastąp / uzupełnij o `seesAllDepartments(role, department)`.
-- Testy poniżej muszą przejść niezależnie od nazwy helpera.
-
-### 2.3 Filtr listowy vs twardy dostęp
-
-- Query `department=` nadal zawęża widok (Support może wybrać Logistykę).
-- Osoba spoza Support **nie może** obejść dostępu parametrem `department=all` (już szkic na branchu staff-department — dopiąć pod nowy `accessSql`).
-
-### 2.4 Testy (`shared/access.test.ts` + ewentualnie serwis)
-
-- [ ] admin → widzi wszystko.
-- [ ] support-agent (`department = cs`) → widzi wszystko.
-- [ ] logistyka-agent → tylko `department = logistics`.
-- [ ] sprawa przeniesiona logistics → finance: znika u logistyki, pojawia się u finansów.
+- [x] `resolveTicketAccess` w `shared/access.ts`: admin/lead/`cs` → wszystko; inny dział → `t.department = …`; **bez** filtra `owner_id` dla agentów.
+- [x] `TicketActor.department` w handlerach API.
+- [x] Testy: support-agent, logistics-agent, transfer logistics→finance.
 
 **Kryterium odbioru:** osoba z logistyki widzi tylko Logistykę; po przeniesieniu do Finansów przestaje ją widzieć. Admin i Support widzą wszystkie i kolumnę „Prowadzi”.
 
@@ -116,41 +90,13 @@ Dodatkowo: operacyjny termin odpowiedzi na **każdą** wiadomość klienta.
 
 ### 3.1 Schema
 
-Migracja (np. `0009_ticket_awaiting_reply.sql`):
+- [x] Migracja `0009_ticket_awaiting_reply.sql`: `awaiting`, `reply_due_at`, indeks, backfill otwartych.
 
-```sql
--- awaiting: kto ma kolejny ruch
--- reply_due_at: deadline odpowiedzi agenta (null gdy czeka na klienta)
-alter table tickets
-  add column if not exists awaiting text,           -- 'us' | 'customer' | null
-  add column if not exists reply_due_at timestamptz;
+### 3.2 Logika w `addEvent`
 
--- constraint awaiting in ('us','customer') or null
-create index if not exists tickets_awaiting_due_idx
-  on tickets (awaiting, reply_due_at);
-```
-
-Opcjonalnie w tej samej lub kolejnej migracji kolumny AI (pkt 6):  
-`ai_summary`, `ai_need`, `ai_next_step`, `ai_summary_at` — żeby nie robić drugiej migracji zaraz potem.
-
-### 3.2 Logika w `addEvent` / inbound
-
-| Zdarzenie | `awaiting` | `reply_due_at` |
-| --- | --- | --- |
-| Wiadomość klienta | `'us'` | czas wiadomości + próg kanału w **godzinach pracy** (`shared/workingHours.ts`, Europe/Warsaw, 9–17) |
-| Agent/bot → klient | `'customer'` | `null` |
-| Notatka / do sprzedawcy | bez zmiany awaiting | bez zmiany |
-
-Progi (jak KPI kanałów): czat **30 min**, mail **2 h** (robocze). Telefon/formularz: przyjąć ten sam próg co czat albo mail — **ustalić w implementacji i opisać w PR** (propozycja: telefon = 30 min, form = 2 h).
-
-### 3.3 Backfill
-
-Dla otwartych spraw: ostatnie zdarzenie klient vs agent → ustaw `awaiting` / `reply_due_at` (dla `us` wylicz due od czasu ostatniej wiadomości klienta).
-
-### 3.4 Test
-
-- [ ] Mail w **piątek 16:30** (Warsaw) + 2 h robocze → termin **poniedziałek 10:30**.
-- [ ] Jednostkowo: helper „add working duration” w `shared/workingHours.ts` (lub obok).
+- [x] Klient → `awaiting=us` + `reply_due_at` (godziny pracy, `shared/reply-clock.ts` + `addBusinessMilliseconds`).
+- [x] Agent/bot do klienta → `awaiting=customer`, `reply_due_at=null`.
+- [x] Test: piątek 16:30 + 2 h → poniedziałek 10:30.
 
 **Kryterium:** mail klienta 10:00 → w „Na teraz” najpóźniej do 12:00 okna SLA; po przekroczeniu `reply_due_at` → „Po terminie SLA”.
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { canBrowseAllDepartments, defaultDepartmentFilter, seesAllTickets } from './access'
+import {
+  defaultDepartmentFilter,
+  resolveTicketAccess,
+  seesAllDepartments,
+  seesAllTickets
+} from './access'
 
 describe('seesAllTickets', () => {
   it('gives admin and lead the full inbox', () => {
@@ -7,21 +12,40 @@ describe('seesAllTickets', () => {
     expect(seesAllTickets('lead')).toBe(true)
   })
 
-  it('limits an agent to owned tickets', () => {
+  it('does not treat role=agent as all-tickets by itself', () => {
     expect(seesAllTickets('agent')).toBe(false)
   })
 })
 
-describe('department browse defaults', () => {
-  it('lets Support and leads see all departments by default', () => {
-    expect(canBrowseAllDepartments('admin', 'finance')).toBe(true)
-    expect(canBrowseAllDepartments('agent', 'cs')).toBe(true)
-    expect(defaultDepartmentFilter('lead', 'cs')).toBe('all')
+describe('department access', () => {
+  it('lets Support agents and leads see every department', () => {
+    expect(seesAllDepartments('admin', 'finance')).toBe(true)
+    expect(seesAllDepartments('lead', 'cs')).toBe(true)
+    expect(seesAllDepartments('agent', 'cs')).toBe(true)
+    expect(defaultDepartmentFilter('agent', 'cs')).toBe('all')
   })
 
-  it('pins logistics/finance agents to their own queue', () => {
-    expect(canBrowseAllDepartments('agent', 'logistics')).toBe(false)
-    expect(defaultDepartmentFilter('agent', 'logistics')).toBe('logistics')
-    expect(defaultDepartmentFilter('agent', 'finance')).toBe('finance')
+  it('scopes logistics and finance agents to their department', () => {
+    expect(seesAllDepartments('agent', 'logistics')).toBe(false)
+    expect(resolveTicketAccess({ role: 'agent', department: 'logistics' })).toEqual({
+      type: 'department',
+      department: 'logistics'
+    })
+    expect(resolveTicketAccess({ role: 'agent', department: 'finance' })).toEqual({
+      type: 'department',
+      department: 'finance'
+    })
+  })
+
+  it('drops a case from logistics after it moves to finance', () => {
+    const logistics = resolveTicketAccess({ role: 'agent', department: 'logistics' })
+    const finance = resolveTicketAccess({ role: 'agent', department: 'finance' })
+    expect(logistics).toEqual({ type: 'department', department: 'logistics' })
+    expect(finance).toEqual({ type: 'department', department: 'finance' })
+    expect(logistics).not.toEqual(finance)
+  })
+
+  it('gives import/cron paths unrestricted access when actor is omitted', () => {
+    expect(resolveTicketAccess(undefined)).toEqual({ type: 'all' })
   })
 })

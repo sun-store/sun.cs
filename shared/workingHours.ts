@@ -205,6 +205,87 @@ export function businessSecondsBetween(
   return total
 }
 
+/**
+ * Dodaje czas roboczy (ms) do chwili start — pomija noce, weekendy i święta PL.
+ * Start poza godzinami pracy: liczenie od początku następnego okna 9:00.
+ */
+export function addBusinessMilliseconds(
+  start: Date,
+  durationMs: number,
+  calendar: WorkCalendar = DEFAULT_WORK_CALENDAR
+): Date {
+  if (durationMs <= 0) return start
+  let remaining = durationMs
+  let cursor = snapToBusinessStart(start, calendar)
+
+  while (remaining > 0) {
+    const parts = zonedParts(cursor, calendar.timeZone)
+    const dayEnd = fromZonedTime(
+      parts.year,
+      parts.month,
+      parts.day,
+      calendar.endHour,
+      0,
+      0,
+      calendar.timeZone
+    )
+    const available = dayEnd.getTime() - cursor.getTime()
+    if (available <= 0) {
+      cursor = nextBusinessDayStart(cursor, calendar)
+      continue
+    }
+    if (remaining <= available) {
+      return new Date(cursor.getTime() + remaining)
+    }
+    remaining -= available
+    cursor = nextBusinessDayStart(cursor, calendar)
+  }
+  return cursor
+}
+
+function snapToBusinessStart(date: Date, calendar: WorkCalendar): Date {
+  const parts = zonedParts(date, calendar.timeZone)
+  const dayStart = fromZonedTime(
+    parts.year,
+    parts.month,
+    parts.day,
+    calendar.startHour,
+    0,
+    0,
+    calendar.timeZone
+  )
+  const dayEnd = fromZonedTime(
+    parts.year,
+    parts.month,
+    parts.day,
+    calendar.endHour,
+    0,
+    0,
+    calendar.timeZone
+  )
+  if (isWorkingDay(date, calendar)) {
+    if (date < dayStart) return dayStart
+    if (date < dayEnd) return date
+  }
+  return nextBusinessDayStart(date, calendar)
+}
+
+function nextBusinessDayStart(date: Date, calendar: WorkCalendar): Date {
+  let key = dateKey(date, calendar.timeZone)
+  for (let i = 0; i < 400; i++) {
+    key = nextDateKey(key)
+    const [yearPart, monthPart, dayPart] = key.split('-')
+    const year = Number(yearPart ?? 0)
+    const month = Number(monthPart ?? 0)
+    const day = Number(dayPart ?? 0)
+    const noon = fromZonedTime(year, month, day, 12, 0, 0, calendar.timeZone)
+    if (isWorkingDay(noon, calendar)) {
+      return fromZonedTime(year, month, day, calendar.startHour, 0, 0, calendar.timeZone)
+    }
+  }
+  return date
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, '0')
 }
