@@ -14,7 +14,7 @@ Audyt i docelowy kształt (30.09.2026): [docs/audyt-i-ksztalt.md](docs/audyt-i-k
 3. `npm install`
 4. `npm run db:migrate`
 5. `npm run dev`
-6. Wejdź na `/login`. Firmowe konto = Google @sun.store (jak logistics). Do tego czasu: **Pierwsze wejście — załóż hasło**.
+6. Wejdź na `/login`. Firmowe konto = Google @sun.store (jak logistics). Hasło tylko dla istniejących kont zapasowych — nowych kont na hasło nie zakładamy.
 7. Admin dopisuje ludzi na `/team`. Klucze Google: `docs/MICROSOFT-SSO.md`. Wersja webowa: `docs/VERCEL.md`.
 
 ## Skrypty

@@ -7,11 +7,9 @@ const firmSso = googleSso || microsoftSso
 
 const credentials = reactive({
   email: '',
-  password: '',
-  name: ''
+  password: ''
 })
-const mode = ref<'signin' | 'signup'>('signin')
-const showPassword = ref(!googleSso)
+const showPassword = ref(!firmSso)
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 const isMicrosoftSubmitting = ref(false)
@@ -92,32 +90,6 @@ async function submit() {
     isSubmitting.value = false
   }
 }
-
-function toggleMode() {
-  mode.value = mode.value === 'signup' ? 'signin' : 'signup'
-}
-
-async function signUp() {
-  errorMessage.value = ''
-  isSubmitting.value = true
-  try {
-    const auth = useAuthClient()
-    const res = await auth.signUp.email({
-      email: credentials.email.trim(),
-      password: credentials.password,
-      name: credentials.name.trim() || credentials.email.trim()
-    })
-    if (res.error) {
-      errorMessage.value = res.error.message || 'Nie udało się założyć konta.'
-      return
-    }
-    await navigateTo(safeNext())
-  } catch (err) {
-    errorMessage.value = err instanceof Error ? err.message : 'Nie udało się założyć konta.'
-  } finally {
-    isSubmitting.value = false
-  }
-}
 </script>
 
 <template>
@@ -174,17 +146,8 @@ async function signUp() {
         <form
           v-if="showPassword"
           class="space-y-4"
-          @submit.prevent="mode === 'signup' ? signUp() : submit()"
+          @submit.prevent="submit()"
         >
-          <UFormField
-            v-if="mode === 'signup'"
-            label="Imię"
-          >
-            <UInput
-              v-model="credentials.name"
-              autocomplete="name"
-            />
-          </UFormField>
           <UFormField label="Firmowy e-mail">
             <UInput
               v-model="credentials.email"
@@ -197,7 +160,7 @@ async function signUp() {
             <UInput
               v-model="credentials.password"
               type="password"
-              :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'"
+              autocomplete="current-password"
             />
           </UFormField>
           <UButton
@@ -207,17 +170,12 @@ async function signUp() {
             variant="subtle"
             :loading="isSubmitting"
           >
-            {{ mode === 'signup' ? 'Załóż hasło i wejdź' : 'Zaloguj hasłem' }}
+            Zaloguj hasłem
           </UButton>
+          <p class="text-xs text-muted">
+            Nowe konta tylko przez SSO. Hasło działa wyłącznie dla istniejących kont zapasowych.
+          </p>
         </form>
-        <button
-          v-if="showPassword"
-          type="button"
-          class="text-sm text-muted underline"
-          @click="toggleMode"
-        >
-          {{ mode === 'signup' ? 'Mam już hasło' : 'Pierwsze wejście — załóż hasło' }}
-        </button>
       </div>
     </UCard>
   </div>

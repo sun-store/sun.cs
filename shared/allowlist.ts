@@ -5,18 +5,11 @@ export type AllowlistEntry = {
   role: AppRole
 }
 
-/** Kogo wpuszczamy na start: Martyna + leadzi / CS z września. Env nadpisuje rolę. */
-export const DEFAULT_CS_TEAM: AllowlistEntry[] = [
-  { email: 'martyna.kalicka@sun.store', role: 'admin' },
-  { email: 'armand.banaszkiewicz@sun.store', role: 'lead' },
-  { email: 'antoni.pajestka@sun.store', role: 'lead' },
-  { email: 'sebastian.dziedzic@sun.store', role: 'lead' },
-  { email: 'monika.polkowska@sun.store', role: 'lead' },
-  { email: 'szymon.poblocki@sun.store', role: 'lead' },
-  { email: 'yuliia.bardai@sun.store', role: 'lead' },
-  { email: 'paulina.wojcik@sun.store', role: 'lead' },
-  { email: 'damian.mastrolia@sun.store', role: 'lead' }
-]
+/**
+ * Brak hardcoded maili w repo (audyt #2). Zespół: tabela `allowlist` (/team)
+ * plus opcjonalnie AUTH_ALLOWLIST w env serwera — nie w publicznym kodzie.
+ */
+export const DEFAULT_CS_TEAM: AllowlistEntry[] = []
 
 export function parseAllowlist(raw: string): AllowlistEntry[] {
   return raw

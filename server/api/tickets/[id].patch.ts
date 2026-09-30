@@ -54,7 +54,8 @@ export default defineEventHandler(async (event) => {
   try {
     const ticket = await updateTicket(getRouterParam(event, 'id') || '', patch, {
       role: user.role,
-      agentId: user.agentId
+      agentId: user.agentId,
+      name: user.name
     })
     if (!ticket) {
       throw createError({ statusCode: 404, statusMessage: 'Nie ma takiej sprawy.' })

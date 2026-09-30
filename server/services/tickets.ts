@@ -7,7 +7,12 @@ import type {
   TicketPriority,
   TicketStatus
 } from '../../shared/domain'
-import { CATEGORIES } from '../../shared/domain'
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  PRIORITY_LABELS,
+  STATUS_LABELS
+} from '../../shared/domain'
 import { seesAllTickets } from '../../shared/access'
 import { evaluateSla, lockFirstAgentReply } from '../../shared/sla'
 import type { IdentifierInput } from '../../shared/resolveContact'
@@ -20,6 +25,7 @@ import { loadCustomerOrders } from './orders'
 export type TicketActor = {
   role: AppRole
   agentId: string | null
+  name?: string
 }
 
 const TICKET_COLUMNS = `t.id, t.contact_id, t.origin_channel, t.status, t.category, t.priority,
@@ -299,13 +305,26 @@ export async function addEvent(ticketId: string, input: {
     firstReply = lockFirstAgentReply(firstReply, now)
   }
 
+  // Klient napisał → Otwarta. Agent/bot do klienta → Czeka. Notatki / do sprzedawcy nie zmieniają statusu.
+  const nextStatus = tickets[0].closed_at
+    ? null
+    : input.senderType === 'customer'
+      ? 'open'
+      : ((input.senderType === 'agent' || input.senderType === 'bot') && input.direction === 'to_customer'
+          ? 'waiting'
+          : null)
+
   await neonQuery(
     `update tickets
      set first_agent_reply_at = $2,
-         status = case when status = 'closed' then status else 'waiting' end,
+         status = case
+           when status = 'closed' then status
+           when $4::text is null then status
+           else $4::ticket_status
+         end,
          business_changed_at = $3
      where id = $1`,
-    [ticketId, firstReply, now]
+    [ticketId, firstReply, now, nextStatus]
   )
 
   return getTicket(ticketId, actor)
@@ -325,14 +344,18 @@ export async function updateTicket(ticketId: string, input: {
   const relatedTransactionId = input.relatedTransactionId === undefined
     ? undefined
     : optionalText(input.relatedTransactionId, TEXT_LIMITS.transactionId, 'Numer zlecenia')
+  const ownerTouched = Object.hasOwn(input, 'ownerId')
   const params: unknown[] = [ticketId]
   const access = accessSql(actor, params)
   const current = await neonQuery<{
     status: TicketStatus
     category: string | null
     priority: TicketPriority | null
+    owner_id: string | null
+    origin_channel: Channel
   }>(
-    `select status, category, priority from tickets t where t.id = $1::uuid and ${access}`,
+    `select status, category, priority, owner_id, origin_channel
+     from tickets t where t.id = $1::uuid and ${access}`,
     params
   )
   if (!current[0]) return null
@@ -340,6 +363,7 @@ export async function updateTicket(ticketId: string, input: {
   const nextStatus = input.status ?? current[0].status
   const nextCategory = input.category !== undefined ? input.category : current[0].category
   const nextPriority = input.priority !== undefined ? input.priority : current[0].priority
+  const nextOwnerId = ownerTouched ? (input.ownerId ?? null) : current[0].owner_id
 
   if (nextStatus === 'closed') {
     if (!nextCategory || !CATEGORIES.includes(nextCategory as typeof CATEGORIES[number])) {
@@ -352,7 +376,7 @@ export async function updateTicket(ticketId: string, input: {
 
   const updated = await neonQuery<{ id: string }>(
     `update tickets
-     set owner_id = coalesce($2, owner_id),
+     set owner_id = case when $7::boolean then $2::uuid else owner_id end,
          status = $3,
          category = $4,
          priority = $5,
@@ -363,15 +387,109 @@ export async function updateTicket(ticketId: string, input: {
      returning id`,
     [
       ticketId,
-      input.ownerId ?? null,
+      nextOwnerId,
       nextStatus,
       nextCategory,
       nextPriority,
-      relatedTransactionId ?? null
+      relatedTransactionId ?? null,
+      ownerTouched
     ]
   )
   if (!updated[0]) return null
+
+  await insertSystemChangeEvents({
+    ticketId,
+    channel: current[0].origin_channel,
+    actorName: actor?.name || 'System',
+    before: {
+      status: current[0].status,
+      category: current[0].category,
+      priority: current[0].priority,
+      ownerId: current[0].owner_id
+    },
+    after: {
+      status: nextStatus,
+      category: nextCategory,
+      priority: nextPriority,
+      ownerId: nextOwnerId
+    }
+  })
+
   return getTicket(ticketId, actor)
+}
+
+async function agentLabel(agentId: string | null): Promise<string> {
+  if (!agentId) return 'nieprzypisana'
+  const rows = await neonQuery<{ display_name: string }>(
+    'select display_name from agents where id = $1',
+    [agentId]
+  )
+  return rows[0]?.display_name || agentId
+}
+
+function fieldLabel(kind: 'status' | 'category' | 'priority', value: string | null): string {
+  if (value == null || value === '') return '—'
+  if (kind === 'status' && value in STATUS_LABELS) return STATUS_LABELS[value as TicketStatus]
+  if (kind === 'category' && value in CATEGORY_LABELS) {
+    return CATEGORY_LABELS[value as typeof CATEGORIES[number]]
+  }
+  if (kind === 'priority' && value in PRIORITY_LABELS) {
+    return PRIORITY_LABELS[value as TicketPriority]
+  }
+  return value
+}
+
+async function insertSystemChangeEvents(input: {
+  ticketId: string
+  channel: Channel
+  actorName: string
+  before: {
+    status: TicketStatus
+    category: string | null
+    priority: TicketPriority | null
+    ownerId: string | null
+  }
+  after: {
+    status: TicketStatus
+    category: string | null
+    priority: TicketPriority | null
+    ownerId: string | null
+  }
+}) {
+  const lines: string[] = []
+  if (input.before.status !== input.after.status) {
+    lines.push(
+      `Status: ${fieldLabel('status', input.before.status)} → ${fieldLabel('status', input.after.status)}`
+    )
+  }
+  if (input.before.category !== input.after.category) {
+    lines.push(
+      `Kategoria: ${fieldLabel('category', input.before.category)} → ${fieldLabel('category', input.after.category)}`
+    )
+  }
+  if (input.before.priority !== input.after.priority) {
+    lines.push(
+      `Priorytet: ${fieldLabel('priority', input.before.priority)} → ${fieldLabel('priority', input.after.priority)}`
+    )
+  }
+  if (input.before.ownerId !== input.after.ownerId) {
+    const from = await agentLabel(input.before.ownerId)
+    const to = await agentLabel(input.after.ownerId)
+    lines.push(`Właściciel: ${from} → ${to}`)
+  }
+  if (!lines.length) return
+
+  const body = boundedText(
+    `${input.actorName}\n${lines.join('\n')}`,
+    TEXT_LIMITS.body,
+    'Historia'
+  )
+  await neonQuery(
+    `insert into ticket_events (
+       ticket_id, channel, direction, sender_type, body
+     ) values ($1, $2, 'internal', 'system', $3)`,
+    [input.ticketId, input.channel, body]
+  )
 }
 
 export async function listAgents() {

@@ -35,6 +35,7 @@ type TicketDetail = {
     createdAt: string
   }>
   status?: string
+  ownerId?: string | null
   hubspotTicketId?: string | null
   orders?: Array<{
     transactionId: string
@@ -81,9 +82,10 @@ const categoryItems = CATEGORIES.map(value => ({ label: CATEGORY_LABELS[value], 
 const priorityItems = TICKET_PRIORITIES.map(value => ({ label: PRIORITY_LABELS[value], value }))
 
 function eventLabel(event: { senderType: string, direction: string, channel: string }) {
+  if (event.senderType === 'system') return 'Zmiana w sprawie'
   const who = event.senderType === 'bot'
     ? 'Bot'
-    : event.senderType === 'agent' ? 'Agent' : event.senderType === 'system' ? 'System' : 'Klient'
+    : event.senderType === 'agent' ? 'Agent' : 'Klient'
   const dir = event.direction === 'to_seller'
     ? 'do sprzedawcy'
     : event.direction === 'internal' ? 'notatka' : 'do klienta'
@@ -145,6 +147,26 @@ async function closeTicket() {
     closeError.value = fetchErr.data?.statusMessage || 'Nie można zamknąć bez kategorii i priorytetu.'
   } finally {
     closing.value = false
+  }
+}
+
+const clearingOwner = ref(false)
+const ownerError = ref('')
+
+async function clearOwner() {
+  ownerError.value = ''
+  clearingOwner.value = true
+  try {
+    await $fetch(`/api/tickets/${route.params.id}`, {
+      method: 'PATCH',
+      body: { ownerId: null }
+    })
+    await refresh()
+  } catch (err: unknown) {
+    const fetchErr = err as { data?: { statusMessage?: string } }
+    ownerError.value = fetchErr.data?.statusMessage || 'Nie udało się zdjąć właściciela.'
+  } finally {
+    clearingOwner.value = false
   }
 }
 </script>
@@ -307,6 +329,29 @@ async function closeTicket() {
               </p>
             </li>
           </ul>
+        </UCard>
+
+        <UCard v-if="data.status !== 'closed' && data.ownerId">
+          <template #header>
+            Właściciel
+          </template>
+          <p class="mb-3 text-sm text-muted">
+            Zdjęcie właściciela wrzuca sprawę do nieprzypisanych (urlop, zmiana dyżuru).
+          </p>
+          <p
+            v-if="ownerError"
+            class="mb-2 text-sm text-error"
+          >
+            {{ ownerError }}
+          </p>
+          <UButton
+            color="neutral"
+            variant="outline"
+            :loading="clearingOwner"
+            @click="clearOwner"
+          >
+            Zdejmij właściciela
+          </UButton>
         </UCard>
 
         <UCard v-if="data.status !== 'closed'">
