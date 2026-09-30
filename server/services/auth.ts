@@ -73,6 +73,9 @@ export function createBetterAuth() {
     },
     emailAndPassword: {
       enabled: true,
+      // Bez potwierdzenia maila rejestracja na hasło pozwalała założyć konto na cudzy adres z listy zespołu.
+      // Nowe konta powstają tylko przez SSO; istniejące hasła dalej działają przy logowaniu.
+      disableSignUp: true,
       minPasswordLength: 8,
       requireEmailVerification: false
     },
